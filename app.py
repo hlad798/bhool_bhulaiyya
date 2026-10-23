@@ -43,7 +43,8 @@ def get_level(level):
     seed = random.randrange(1, 10 ** 9)
     rng = random.Random(seed)
 
-    maze = Maze(cfg['rows'], cfg['cols'], rng, braid=cfg['braid'])
+    maze = Maze(cfg['rows'], cfg['cols'], rng, braid=cfg['braid'],
+                shape=cfg['shape'], algorithm=cfg['algorithm'])
     dist_to_exit = maze.distances(maze.exit)
     dead = maze.dead_ends()
     questions = select_questions(len(dead), cfg['tiers'], rng)
@@ -63,6 +64,8 @@ def get_level(level):
         'grid': maze.grid,
         'start': list(maze.start),
         'exit': list(maze.exit),
+        'exitWall': maze.exit_wall,
+        'blocked': maze.blocked_rows(),
         'parSteps': maze.shortest_path_length(),
         'deadEnds': dead_ends,
         'whispers': WHISPERS,

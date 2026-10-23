@@ -34,6 +34,7 @@
   var ctx = canvas.getContext('2d');
   var staticLayer = document.createElement('canvas');
   var fogLayer = document.createElement('canvas');
+  var vignetteLayer = document.createElement('canvas');
 
   // ---------------------------------------------------------------- state
   var state = {
@@ -46,7 +47,11 @@
     rows: 0,
     cols: 0,
     cell: 20,
-    px: 400,
+    pw: 400,
+    ph: 400,
+    blocked: [],
+    margin: 0,
+    decor: null,
     dpr: 1,
     deadEnds: {},
     player: { r: 0, c: 0, x: 0, y: 0 },
@@ -300,7 +305,7 @@
         node.connect(lp);
         node = lp;
       }
-      node.connect(this.master);
+      node.connect(opts.dest || this.master);
       if (opts.wet) {
         var send = c.createGain();
         send.gain.value = opts.wet;
@@ -328,37 +333,196 @@
       });
     },
 
+    // ------------------------------------------------------------ music
+    // Quiet, eerie Hindustani background: a tanpura drone (Pa-Sa-Sa-Sa)
+    // with now and then a slow, sarangi-like voice singing a phrase of
+    // Raga Todi - komal Re, komal Ga, tivra Ma, komal Dha - with the
+    // characteristic slow swaying (andolan) on komal Re and komal Dha.
+    SA: 138.59,  // C#3
+
     startDrone: function () {
       if (!this.ctx || this.droneOn) { return; }
       this.droneOn = true;
       var c = this.ctx;
-      var g = c.createGain();
-      g.gain.value = 0.06;
-      var f = c.createBiquadFilter();
-      f.type = 'lowpass';
-      f.frequency.value = 150;
-      f.Q.value = 5;
-      var o1 = c.createOscillator(); o1.type = 'sawtooth'; o1.frequency.value = 55;
-      var o2 = c.createOscillator(); o2.type = 'sawtooth'; o2.frequency.value = 55.6;
-      var o3 = c.createOscillator(); o3.type = 'sine'; o3.frequency.value = 82.4;
-      o1.connect(f); o2.connect(f); o3.connect(f);
-      f.connect(g); g.connect(this.master);
+      this.musicLevel = 0.3;
+      this.musicBus = c.createGain();
+      this.musicBus.gain.value = this.musicLevel;
+      this.musicBus.connect(this.master);
+      var send = c.createGain();
+      send.gain.value = 0.9;
+      this.musicBus.connect(send);
+      send.connect(this.reverb);
+
+      // faint night air
       var wind = this.noise();
-      var bp = c.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 450; bp.Q.value = 0.6;
-      var wg = c.createGain(); wg.gain.value = 0.02;
-      var lfo = c.createOscillator(); lfo.frequency.value = 0.13;
-      var lfoG = c.createGain(); lfoG.gain.value = 0.012;
-      lfo.connect(lfoG); lfoG.connect(wg.gain);
-      wind.connect(bp); bp.connect(wg); wg.connect(this.master);
-      var ws = c.createGain(); ws.gain.value = 0.5;
-      wg.connect(ws); ws.connect(this.reverb);
-      o1.start(); o2.start(); o3.start(); wind.start(); lfo.start();
-      this.droneFilter = f;
+      var bp = c.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 420; bp.Q.value = 0.7;
+      var wg = c.createGain(); wg.gain.value = 0.035;
+      wind.connect(bp); bp.connect(wg); wg.connect(this.musicBus);
+      wind.start();
+
+      // a low pulse that only rises when she is close (see setTension)
+      var low = c.createOscillator(); low.type = 'sine'; low.frequency.value = this.SA / 2;
+      this.tensionGain = c.createGain(); this.tensionGain.gain.value = 0;
+      low.connect(this.tensionGain); this.tensionGain.connect(this.master);
+      low.start();
+
+      var SA = this.SA;
+      this.tanpura = [
+        this.renderPluck(SA * 0.749),   // Pa (below Sa)
+        this.renderPluck(SA),           // Sa
+        this.renderPluck(SA),           // Sa
+        this.renderPluck(SA / 2)        // low Sa (kharaj)
+      ];
+      this.pluckIndex = 0;
+      this.nextPluck = c.currentTime + 0.4;
+      this.nextPhrase = c.currentTime + 7;
+      var self = this;
+      if (!this.fixedCtx) {
+        this.musicTimer = setInterval(function () { self.scheduleMusic(); }, 200);
+      }
     },
 
+    scheduleMusic: function () {
+      var c = this.ctx;
+      var ahead = c.currentTime + 0.7;
+      while (this.nextPluck < ahead) {
+        var idx = this.pluckIndex % 4;
+        this.playBuffer(this.tanpura[idx], idx === 3 ? 0.42 : 0.32,
+          { when: this.nextPluck, dest: this.musicBus, rate: 1 + (Math.random() - 0.5) * 0.002 });
+        this.nextPluck += idx === 3 ? 1.5 : 0.9;
+        this.pluckIndex++;
+      }
+      if (c.currentTime + 0.5 > this.nextPhrase) {
+        var dur = this.playPhrase(this.nextPhrase);
+        this.nextPhrase += dur + 6 + Math.random() * 8;
+      }
+    },
+
+    // A tanpura string: Karplus-Strong plucked string with a buzzing
+    // jawari brightness, rendered once into a buffer.
+    renderPluck: function (freq) {
+      var c = this.ctx;
+      var sr = c.sampleRate;
+      var len = Math.floor(sr * 5);
+      var buf = c.createBuffer(1, len, sr);
+      var d = buf.getChannelData(0);
+      var period = Math.max(2, Math.round(sr / freq));
+      var line = new Float32Array(period);
+      var lp = 0, i;
+      for (i = 0; i < period; i++) {
+        lp += 0.5 * ((Math.random() * 2 - 1) - lp);
+        line[i] = lp;
+      }
+      var idx = 0;
+      for (i = 0; i < len; i++) {
+        var nxt = (idx + 1) % period;
+        var cur = line[idx];
+        line[idx] = (cur * 0.52 + line[nxt] * 0.48) * 0.99965;
+        d[i] = cur;
+        idx = nxt;
+      }
+      // jawari: a gentle buzz that keeps the upper harmonics alive
+      var prev = 0, peak = 0;
+      for (i = 0; i < len; i++) {
+        var x = d[i];
+        var bright = x - prev;
+        prev = x;
+        var y = Math.tanh(1.6 * x) + 0.55 * bright * (0.6 + 0.4 * Math.abs(x));
+        var fade = i > len - sr * 0.5 ? (len - i) / (sr * 0.5) : 1;
+        d[i] = y * fade;
+        peak = Math.max(peak, Math.abs(d[i]));
+      }
+      for (i = 0; i < len; i++) { d[i] *= 0.8 / (peak || 1); }
+      return buf;
+    },
+
+    // A slow raga phrase on a bowed, sarangi-like voice. Returns its length.
+    playPhrase: function (t0) {
+      var c = this.ctx;
+      var PHRASES = [
+        [[0, 1.4], [1, 0.9], [3, 1.5], [1, 0.8], [0, 2.2]],
+        [[-1, 0.9], [0, 0.7], [1, 0.8], [3, 1.1], [6, 1.7], [3, 0.9], [1, 0.8], [0, 2.0]],
+        [[6, 1.1], [8, 1.6], [11, 0.9], [12, 2.0], [11, 0.8], [8, 1.4], [6, 1.0], [3, 1.8]],
+        [[8, 1.8], [6, 0.9], [3, 1.1], [1, 1.3], [-1, 1.0], [0, 2.4]],
+        [[3, 1.1], [6, 1.3], [8, 2.0], [6, 0.8], [3, 1.1], [1, 0.9], [0, 2.2]],
+        [[-4, 1.6], [-1, 1.0], [0, 1.2], [1, 1.6], [0, 2.4]]
+      ];
+      var notes = PHRASES[Math.floor(Math.random() * PHRASES.length)];
+      var base = this.SA * 2;
+      var total = 0, k;
+      for (k = 0; k < notes.length; k++) { total += notes[k][1]; }
+      var rate = 120;
+      var n = Math.max(2, Math.floor(total * rate));
+      var curve = new Float32Array(n);
+      var pos = 0;
+      for (k = 0; k < notes.length; k++) {
+        var semi = notes[k][0], dur = notes[k][1];
+        var f0 = base * Math.pow(2, semi / 12);
+        var nextSemi = k + 1 < notes.length ? notes[k + 1][0] : semi;
+        var f1 = base * Math.pow(2, nextSemi / 12);
+        var steps = Math.floor(dur * rate);
+        var andolan = (semi % 12 === 1 || semi % 12 === 8 || semi % 12 === -4 || semi % 12 === -11);
+        for (var j = 0; j < steps && pos < n; j++) {
+          var u = j / steps;
+          var tt = (pos / rate);
+          var f = f0;
+          // meend: glide into the next note during the last quarter
+          if (u > 0.75) { f = f0 * Math.pow(f1 / f0, (u - 0.75) / 0.25); }
+          var cents = andolan ? 22 * Math.sin(TWO_PI * 1.3 * tt) : 6 * Math.sin(TWO_PI * 5.2 * tt);
+          curve[pos++] = f * Math.pow(2, cents / 1200);
+        }
+      }
+      while (pos < n) { curve[pos] = curve[pos - 1]; pos++; }
+
+      var voice = c.createGain();
+      voice.gain.setValueAtTime(0.0001, t0);
+      voice.gain.exponentialRampToValueAtTime(0.2, t0 + 0.6);
+      voice.gain.setValueAtTime(0.2, t0 + total - 1.2);
+      voice.gain.exponentialRampToValueAtTime(0.0001, t0 + total);
+      var lp = c.createBiquadFilter();
+      lp.type = 'lowpass';
+      lp.frequency.value = 3200;
+      voice.connect(lp);
+      lp.connect(this.musicBus);
+      var body = [{ f: 620, q: 1.4, g: 1.0 }, { f: 1350, q: 2.2, g: 0.55 }, { f: 2700, q: 3.5, g: 0.3 }];
+      var mixIn = c.createGain();
+      mixIn.gain.value = 1;
+      for (k = 0; k < body.length; k++) {
+        var b = c.createBiquadFilter();
+        b.type = 'bandpass';
+        b.frequency.value = body[k].f;
+        b.Q.value = body[k].q;
+        var bg = c.createGain();
+        bg.gain.value = body[k].g;
+        mixIn.connect(b); b.connect(bg); bg.connect(voice);
+      }
+      var detunes = [1, 1.003];
+      for (k = 0; k < detunes.length; k++) {
+        var o = c.createOscillator();
+        o.type = 'sawtooth';
+        var cv = new Float32Array(n);
+        for (var q = 0; q < n; q++) { cv[q] = curve[q] * detunes[k]; }
+        o.frequency.setValueCurveAtTime(cv, t0, total);
+        var og = c.createGain();
+        og.gain.value = 0.5;
+        o.connect(og); og.connect(mixIn);
+        o.start(t0); o.stop(t0 + total + 0.05);
+      }
+      var bow = this.noise();
+      var bbp = c.createBiquadFilter(); bbp.type = 'bandpass'; bbp.frequency.value = 2400; bbp.Q.value = 0.9;
+      var bwg = c.createGain(); bwg.gain.value = 0.05;
+      bow.connect(bbp); bbp.connect(bwg); bwg.connect(voice);
+      bow.start(t0); bow.stop(t0 + total + 0.05);
+      return total;
+    },
+
+    // closeness 0..1: the music ducks and a low pulse rises as she nears,
+    // so the heartbeat and the ghungroo stand out.
     setTension: function (t) {
-      if (!this.droneFilter) { return; }
-      this.droneFilter.frequency.setTargetAtTime(150 + 800 * t, this.ctx.currentTime, 0.4);
+      if (!this.musicBus) { return; }
+      var now = this.ctx.currentTime;
+      this.musicBus.gain.setTargetAtTime(this.musicLevel * (1 - 0.65 * t), now, 0.5);
+      this.tensionGain.gain.setTargetAtTime(0.05 * t * t, now, 0.5);
     },
 
     // A screaming voice: two slightly mismatched voices on a sawtooth source,
@@ -629,6 +793,8 @@
     state.particles = [];
     state.paused = false;
     state.question = null;
+    state.blocked = data.blocked;
+    state.decor = makeDecor(data);
     state.staticDirty = true;
 
     $('hud-level').textContent = data.config.level + ' / ' + data.maxLevel;
@@ -637,6 +803,7 @@
     resize();
 
     showMessage('Level ' + data.config.level + ': ' + data.config.name,
+      'This floor is <b>' + data.config.layout + '</b>.<br>' +
       'Manjulika wakes in <b>' + data.config.wake_delay + ' seconds</b> and moves at <b>' +
       data.config.ghost_speed + ' steps per second</b>.<br>You have only <b>' +
       data.config.question_time + ' seconds</b> to answer each riddle. Find the glowing door.',
@@ -688,10 +855,9 @@
     $('modal-question').classList.remove('show');
     $('board-wrap').classList.remove('shake');
     Sound.scream(1.0, 3.6, { wet: 0.6 });
-    drawScare();
-    $('jumpscare').classList.add('show');
+    startScare();
     setTimeout(function () {
-      $('jumpscare').classList.remove('show');
+      stopScare();
       api('/api/rank', { total: state.total, cleared: state.level - 1 }).then(function (res) {
         showCaught(reason, res.title);
       }).catch(function () { showCaught(reason, ''); });
@@ -877,8 +1043,8 @@
     state.distMap = bfsFromPlayer();
     state.dist = state.distMap[g.r * cols + g.c];
     // Her anklet bells ring with every step - louder as she gets closer.
-    if (state.dist <= 12) {
-      Sound.ghungroo(0.08 + Math.pow((12 - state.dist) / 12, 1.6) * 0.75, ghostPan());
+    if (state.dist <= 18) {
+      Sound.ghungroo(0.03 + Math.pow((18 - state.dist) / 18, 1.8) * 1.0, ghostPan());
     }
   }
 
@@ -895,6 +1061,14 @@
       var pt = state.particles[i];
       pt.x += pt.vx * dt; pt.y += pt.vy * dt; pt.life -= dt;
       if (pt.life <= 0) { state.particles.splice(i, 1); }
+    }
+    if (state.decor) {
+      for (var oi = 0; oi < state.decor.orbs.length; oi++) {
+        var ob = state.decor.orbs[oi];
+        ob.x += ob.vx * dt; ob.y += ob.vy * dt;
+        if (ob.x < 0.3 || ob.x > state.cols - 0.3) { ob.vx = -ob.vx; }
+        if (ob.y < 0.3 || ob.y > state.rows - 0.3) { ob.vy = -ob.vy; }
+      }
     }
 
     // Question countdown (game is paused while you think)
@@ -951,13 +1125,13 @@
     }
 
     // Heartbeat: faster and louder as she closes in (about 60 -> 180 bpm)
-    var d = g.awake ? Math.max(1, state.dist) : 20;
-    var closeness = g.awake ? Math.max(0, Math.min(1, (16 - d) / 15)) : 0;
-    var bpm = 60 + closeness * 120;
+    var d = g.awake ? Math.max(1, state.dist) : 30;
+    var closeness = g.awake ? Math.max(0, Math.min(1, (20 - d) / 19)) : 0;
+    var bpm = 58 + closeness * 132;
     state.heartAcc += dt;
     if (state.heartAcc >= 60 / bpm) {
       state.heartAcc = 0;
-      Sound.heartbeat(0.35 + closeness * 0.65, 0.26 - closeness * 0.11);
+      Sound.heartbeat(0.12 + Math.pow(closeness, 1.3) * 0.88, 0.27 - closeness * 0.12);
     }
     Sound.setTension(closeness);
 
@@ -984,90 +1158,376 @@
   function resize() {
     if (!state.rows) { return; }
     var wrap = $('board-wrap');
-    var avail = Math.min(wrap.clientWidth - 8, wrap.clientHeight - 8, 760);
-    var cell = Math.max(10, Math.floor(avail / state.cols));
+    var aw = Math.min(wrap.clientWidth - 8, 1100);
+    var ah = wrap.clientHeight - 8;
+    var cell = Math.max(8, Math.floor(Math.min(aw / (state.cols + 0.9), ah / (state.rows + 0.9))));
+    var m = Math.round(cell * 0.45);
     state.cell = cell;
-    state.px = cell * state.cols;
+    state.margin = m;
+    state.pw = cell * state.cols + 2 * m;
+    state.ph = cell * state.rows + 2 * m;
     state.dpr = window.devicePixelRatio || 1;
-    var size = Math.round(state.px * state.dpr);
-    canvas.width = size; canvas.height = size;
-    canvas.style.width = state.px + 'px';
-    canvas.style.height = state.px + 'px';
-    staticLayer.width = size; staticLayer.height = size;
-    fogLayer.width = size; fogLayer.height = size;
+    var w = Math.round(state.pw * state.dpr), h = Math.round(state.ph * state.dpr);
+    canvas.width = w; canvas.height = h;
+    canvas.style.width = state.pw + 'px';
+    canvas.style.height = state.ph + 'px';
+    staticLayer.width = w; staticLayer.height = h;
+    fogLayer.width = w; fogLayer.height = h;
+    vignetteLayer.width = w; vignetteLayer.height = h;
+    buildVignette();
     state.staticDirty = true;
+  }
+
+  // ================================================================== MAZE STYLE
+  // Seeded random numbers, so a level's decorations stay put on resize.
+  function seededRandom(seed) {
+    var a = seed >>> 0;
+    return function () {
+      a = (a + 0x6D2B79F5) | 0;
+      var t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  function isBlocked(r, c) {
+    if (r < 0 || c < 0 || r >= state.rows || c >= state.cols) { return true; }
+    return state.blocked[r].charAt(c) === '#';
+  }
+
+  // Every wall around the open cells, each one listed once.
+  // Horizontal walls lie on the top edge of cell (r, c), vertical ones on its left edge.
+  function wallSegments() {
+    var segs = [];
+    for (var r = 0; r < state.rows; r++) {
+      for (var c = 0; c < state.cols; c++) {
+        if (isBlocked(r, c)) { continue; }
+        var cell = state.grid[r][c];
+        if (cell & N) { segs.push({ h: true, r: r, c: c }); }
+        if (cell & W) { segs.push({ h: false, r: r, c: c }); }
+        if ((cell & S) && isBlocked(r + 1, c)) { segs.push({ h: true, r: r + 1, c: c }); }
+        if ((cell & E) && isBlocked(r, c + 1)) { segs.push({ h: false, r: r, c: c + 1 }); }
+      }
+    }
+    return segs;
+  }
+
+  function cellWall(r, c, bit) {
+    if (bit === N) { return { h: true, r: r, c: c }; }
+    if (bit === S) { return { h: true, r: r + 1, c: c }; }
+    if (bit === W) { return { h: false, r: r, c: c }; }
+    return { h: false, r: r, c: c + 1 };
+  }
+
+  // Decide once per level where the bones, cobwebs and floating lights go.
+  function makeDecor(data) {
+    var R = seededRandom(data.seed);
+    var decor = { bones: [], webs: [], orbs: [] };
+    var openCount = 0;
+    for (var r = 0; r < state.rows; r++) {
+      for (var c = 0; c < state.cols; c++) {
+        if (isBlocked(r, c)) { continue; }
+        openCount++;
+        var cell = data.grid[r][c];
+        var isDead = false;
+        for (var di = 0; di < data.deadEnds.length; di++) {
+          if (data.deadEnds[di].r === r && data.deadEnds[di].c === c) { isDead = true; }
+        }
+        if (!isDead && R() < 0.09) {
+          decor.bones.push({ x: c + 0.2 + R() * 0.6, y: r + 0.2 + R() * 0.6, a: R() * Math.PI, s: 0.32 + R() * 0.12 });
+        }
+        if ((cell & N) && (cell & W) && R() < 0.3) { decor.webs.push([r, c, 0]); }
+        else if ((cell & N) && (cell & E) && R() < 0.2) { decor.webs.push([r, c, 1]); }
+      }
+    }
+    var orbCount = 4 + Math.floor(openCount / 70);
+    for (var k = 0; k < orbCount; k++) {
+      var ang = R() * Math.PI * 2;
+      decor.orbs.push({
+        x: 0.5 + R() * (state.cols - 1), y: 0.5 + R() * (state.rows - 1),
+        vx: Math.cos(ang) * (0.08 + R() * 0.12), vy: Math.sin(ang) * (0.08 + R() * 0.12),
+        r: 0.9 + R() * 0.8, phase: R() * 10
+      });
+    }
+    return decor;
+  }
+
+  // ---- floor: dark stone tiles, each with a faint carved diamond
+  function paintFloor(c, cs, R) {
+    c.fillStyle = '#0b0605';
+    c.fillRect(-state.margin, -state.margin, state.pw, state.ph);
+    for (var r = 0; r < state.rows; r++) {
+      for (var col = 0; col < state.cols; col++) {
+        var x = col * cs, y = r * cs;
+        if (isBlocked(r, col)) {
+          // solid stone outside the haveli's floor
+          c.fillStyle = (r + col) % 2 ? '#120a08' : '#100807';
+          c.fillRect(x, y, cs, cs);
+          continue;
+        }
+        var g = c.createLinearGradient(x, y, x + cs, y + cs);
+        var tone = R() * 10;
+        g.addColorStop(0, 'rgb(' + Math.round(52 + tone) + ',36,30)');
+        g.addColorStop(1, 'rgb(' + Math.round(38 + tone) + ',26,22)');
+        c.fillStyle = g;
+        c.fillRect(x, y, cs, cs);
+        // carved diamond
+        c.strokeStyle = 'rgba(175,115,85,0.16)';
+        c.lineWidth = Math.max(0.6, cs * 0.02);
+        c.beginPath();
+        c.moveTo(x + cs / 2, y + cs * 0.12);
+        c.lineTo(x + cs * 0.88, y + cs / 2);
+        c.lineTo(x + cs / 2, y + cs * 0.88);
+        c.lineTo(x + cs * 0.12, y + cs / 2);
+        c.closePath();
+        c.stroke();
+        c.strokeStyle = 'rgba(175,115,85,0.09)';
+        c.beginPath();
+        c.moveTo(x + cs / 2, y + cs * 0.3);
+        c.lineTo(x + cs * 0.7, y + cs / 2);
+        c.lineTo(x + cs / 2, y + cs * 0.7);
+        c.lineTo(x + cs * 0.3, y + cs / 2);
+        c.closePath();
+        c.stroke();
+        // grit
+        for (var gr = 0; gr < 6; gr++) {
+          c.fillStyle = R() < 0.5 ? 'rgba(0,0,0,0.25)' : 'rgba(200,150,120,0.06)';
+          c.fillRect(x + R() * cs, y + R() * cs, Math.max(0.8, cs * 0.025), Math.max(0.8, cs * 0.025));
+        }
+        // grout
+        c.strokeStyle = 'rgba(8,4,3,0.7)';
+        c.lineWidth = Math.max(0.6, cs * 0.022);
+        c.strokeRect(x, y, cs, cs);
+      }
+    }
+  }
+
+  // ---- thin, rounded, ribbed stone walls
+  function wallPath(c, segs, cs, ox, oy) {
+    c.beginPath();
+    for (var k = 0; k < segs.length; k++) {
+      var sg = segs[k];
+      var x0 = sg.c * cs + ox, y0 = sg.r * cs + oy;
+      c.moveTo(x0, y0);
+      if (sg.h) { c.lineTo(x0 + cs, y0); } else { c.lineTo(x0, y0 + cs); }
+    }
+  }
+
+  function paintWalls(c, segs, cs, t) {
+    c.lineCap = 'round';
+    c.lineJoin = 'round';
+    c.strokeStyle = 'rgba(0,0,0,0.6)';
+    c.lineWidth = t * 1.7;
+    wallPath(c, segs, cs, t * 0.3, t * 0.45);
+    c.stroke();
+    c.strokeStyle = '#3c2119';
+    c.lineWidth = t * 1.2;
+    wallPath(c, segs, cs, 0, 0);
+    c.stroke();
+    c.strokeStyle = '#9b6555';
+    c.lineWidth = t;
+    wallPath(c, segs, cs, 0, 0);
+    c.stroke();
+    c.strokeStyle = '#d29d88';
+    c.lineWidth = t * 0.32;
+    wallPath(c, segs, cs, -t * 0.16, -t * 0.18);
+    c.stroke();
+    // ribs across the stone
+    c.strokeStyle = 'rgba(55,28,20,0.5)';
+    c.lineWidth = Math.max(0.6, t * 0.13);
+    c.lineCap = 'butt';
+    var step = cs / 5;
+    c.beginPath();
+    for (var k = 0; k < segs.length; k++) {
+      var sg = segs[k];
+      for (var q = 1; q < 5; q++) {
+        if (sg.h) {
+          var hx = sg.c * cs + q * step, hy = sg.r * cs;
+          c.moveTo(hx, hy - t * 0.45); c.lineTo(hx, hy + t * 0.45);
+        } else {
+          var vx = sg.c * cs, vy = sg.r * cs + q * step;
+          c.moveTo(vx - t * 0.45, vy); c.lineTo(vx + t * 0.45, vy);
+        }
+      }
+    }
+    c.stroke();
+  }
+
+  // ---- red circle-and-triangle sigil marking a riddle dead end
+  function paintSigil(c, x, y, cs) {
+    var r = cs * 0.3;
+    var glow = c.createRadialGradient(x, y, 0, x, y, r * 1.6);
+    glow.addColorStop(0, 'rgba(170,20,30,0.25)');
+    glow.addColorStop(1, 'rgba(170,20,30,0)');
+    c.fillStyle = glow;
+    c.beginPath(); c.arc(x, y, r * 1.6, 0, TWO_PI); c.fill();
+    c.strokeStyle = 'rgba(160,22,32,0.85)';
+    c.lineWidth = Math.max(0.8, cs * 0.03);
+    c.beginPath(); c.arc(x, y, r, 0, TWO_PI); c.stroke();
+    c.lineWidth = Math.max(0.6, cs * 0.015);
+    c.beginPath(); c.arc(x, y, r * 1.12, 0, TWO_PI); c.stroke();
+    c.lineWidth = Math.max(0.8, cs * 0.028);
+    c.beginPath();
+    for (var k = 0; k < 3; k++) {
+      var a = -Math.PI / 2 + k * TWO_PI / 3;
+      if (k === 0) { c.moveTo(x + Math.cos(a) * r * 0.78, y + Math.sin(a) * r * 0.78); }
+      else { c.lineTo(x + Math.cos(a) * r * 0.78, y + Math.sin(a) * r * 0.78); }
+    }
+    c.closePath();
+    c.stroke();
+  }
+
+  function paintBone(c, b, cs) {
+    var len = b.s * cs;
+    c.save();
+    c.translate(b.x * cs, b.y * cs);
+    c.rotate(b.a);
+    c.fillStyle = 'rgba(0,0,0,0.4)';
+    c.fillRect(-len / 2 + len * 0.05, len * 0.05, len, len * 0.14);
+    c.globalAlpha = 0.6;
+    c.strokeStyle = '#b8ad9a';
+    c.lineCap = 'round';
+    c.lineWidth = len * 0.13;
+    c.beginPath(); c.moveTo(-len * 0.38, 0); c.lineTo(len * 0.38, 0); c.stroke();
+    c.fillStyle = '#c4baa8';
+    var ends = [-1, 1];
+    for (var e = 0; e < 2; e++) {
+      c.beginPath(); c.arc(ends[e] * len * 0.42, -len * 0.08, len * 0.1, 0, TWO_PI); c.fill();
+      c.beginPath(); c.arc(ends[e] * len * 0.42, len * 0.08, len * 0.1, 0, TWO_PI); c.fill();
+    }
+    c.strokeStyle = 'rgba(255,255,255,0.35)';
+    c.lineWidth = len * 0.04;
+    c.beginPath(); c.moveTo(-len * 0.3, -len * 0.03); c.lineTo(len * 0.3, -len * 0.03); c.stroke();
+    c.restore();
+  }
+
+  function paintCobweb(c, x, y, cs, flip) {
+    var dx = flip ? -1 : 1;
+    var len = cs * 0.45;
+    c.strokeStyle = 'rgba(225,225,225,0.3)';
+    c.lineWidth = Math.max(0.4, cs * 0.009);
+    for (var k = 0; k <= 4; k++) {
+      var a = (k / 4) * Math.PI / 2;
+      c.beginPath();
+      c.moveTo(x, y);
+      c.lineTo(x + dx * Math.cos(a) * len, y + Math.sin(a) * len);
+      c.stroke();
+    }
+    for (var ring = 1; ring <= 3; ring++) {
+      var rl = len * ring / 3.4;
+      c.beginPath();
+      for (var j = 0; j <= 4; j++) {
+        var a2 = (j / 4) * Math.PI / 2;
+        var px2 = x + dx * Math.cos(a2) * rl, py2 = y + Math.sin(a2) * rl;
+        if (j === 0) { c.moveTo(px2, py2); }
+        else {
+          var am = ((j - 0.5) / 4) * Math.PI / 2;
+          c.quadraticCurveTo(x + dx * Math.cos(am) * rl * 0.8, y + Math.sin(am) * rl * 0.8, px2, py2);
+        }
+      }
+      c.stroke();
+    }
+  }
+
+  // the exit: a glowing gap in the outer wall
+  function exitPoint(cs) {
+    var w = cellWall(state.data.exit[0], state.data.exit[1], state.data.exitWall);
+    if (w.h) { return { x: (w.c + 0.5) * cs, y: w.r * cs, h: true }; }
+    return { x: w.c * cs, y: (w.r + 0.5) * cs, h: false };
+  }
+
+  function paintExit(c, cs, t) {
+    var e = exitPoint(cs);
+    c.save();
+    c.translate(e.x, e.y);
+    if (!e.h) { c.rotate(Math.PI / 2); }
+    var len = cs * 0.72;
+    c.lineCap = 'round';
+    c.strokeStyle = '#0b0605';
+    c.lineWidth = t * 1.8;
+    c.beginPath(); c.moveTo(-len / 2, 0); c.lineTo(len / 2, 0); c.stroke();
+    var g = c.createLinearGradient(-len / 2, 0, len / 2, 0);
+    g.addColorStop(0, 'rgba(160,240,150,0.5)');
+    g.addColorStop(0.5, 'rgba(235,255,220,1)');
+    g.addColorStop(1, 'rgba(160,240,150,0.5)');
+    c.strokeStyle = g;
+    c.lineWidth = t * 1.1;
+    c.beginPath(); c.moveTo(-len / 2, 0); c.lineTo(len / 2, 0); c.stroke();
+    c.fillStyle = '#c9a14a';
+    c.beginPath(); c.arc(-len / 2 - t * 0.6, 0, t * 0.75, 0, TWO_PI); c.fill();
+    c.beginPath(); c.arc(len / 2 + t * 0.6, 0, t * 0.75, 0, TWO_PI); c.fill();
+    c.restore();
   }
 
   function buildStatic() {
     var c = staticLayer.getContext('2d');
     var cs = state.cell;
-    c.setTransform(state.dpr, 0, 0, state.dpr, 0, 0);
-    c.clearRect(0, 0, state.px, state.px);
-    var r, col;
-    // Floor tiles
-    for (r = 0; r < state.rows; r++) {
-      for (col = 0; col < state.cols; col++) {
-        c.fillStyle = (r + col) % 2 === 0 ? '#22100f' : '#1b0c0c';
-        c.fillRect(col * cs, r * cs, cs, cs);
-        c.strokeStyle = 'rgba(201,161,74,0.05)';
-        c.strokeRect(col * cs + cs * 0.2, r * cs + cs * 0.2, cs * 0.6, cs * 0.6);
+    var t = Math.max(3, cs * 0.12);
+    var R = seededRandom(state.data.seed + 7);
+    var k;
+    var m = state.margin;
+    c.setTransform(state.dpr, 0, 0, state.dpr, m * state.dpr, m * state.dpr);
+    c.clearRect(-m, -m, state.pw, state.ph);
+
+    paintFloor(c, cs, R);
+    for (var dk in state.deadEnds) {
+      if (state.deadEnds.hasOwnProperty(dk) && !state.deadEnds[dk].solved) {
+        paintSigil(c, (state.deadEnds[dk].c + 0.5) * cs, (state.deadEnds[dk].r + 0.5) * cs, cs);
       }
     }
-    // Riddle marks on unsolved dead ends
-    for (var k in state.deadEnds) {
-      if (!state.deadEnds.hasOwnProperty(k)) { continue; }
-      var de = state.deadEnds[k];
-      if (de.solved) { continue; }
-      var x = de.c * cs + cs / 2, y = de.r * cs + cs / 2;
-      c.save();
-      c.translate(x, y);
-      c.rotate(Math.PI / 4);
-      c.strokeStyle = 'rgba(224,40,58,0.7)';
-      c.lineWidth = Math.max(1, cs * 0.05);
-      c.strokeRect(-cs * 0.14, -cs * 0.14, cs * 0.28, cs * 0.28);
-      c.restore();
-      c.fillStyle = 'rgba(224,40,58,0.85)';
-      c.font = 'bold ' + Math.floor(cs * 0.3) + 'px Georgia';
-      c.textAlign = 'center';
-      c.textBaseline = 'middle';
-      c.fillText('?', x, y + 1);
+    for (k = 0; k < state.decor.bones.length; k++) { paintBone(c, state.decor.bones[k], cs); }
+    for (k = 0; k < state.decor.webs.length; k++) {
+      var wb = state.decor.webs[k];
+      paintCobweb(c, (wb[1] + wb[2]) * cs + (wb[2] ? -t * 0.6 : t * 0.6), wb[0] * cs + t * 0.6, cs, wb[2] === 1);
     }
-    // Exit door
-    var ex = state.data.exit[1] * cs, ey = state.data.exit[0] * cs;
-    c.fillStyle = '#3d6b3a';
-    c.beginPath();
-    c.moveTo(ex + cs * 0.25, ey + cs * 0.9);
-    c.lineTo(ex + cs * 0.25, ey + cs * 0.4);
-    c.arc(ex + cs * 0.5, ey + cs * 0.4, cs * 0.25, Math.PI, 0);
-    c.lineTo(ex + cs * 0.75, ey + cs * 0.9);
-    c.closePath();
-    c.fill();
-    c.strokeStyle = '#c9a14a';
-    c.lineWidth = Math.max(1, cs * 0.06);
-    c.stroke();
-    // Walls
-    c.lineCap = 'round';
-    var passes = [
-      { color: '#4a3415', width: Math.max(3, cs * 0.22) },
-      { color: '#a07c36', width: Math.max(1.5, cs * 0.1) }
-    ];
-    for (var pi = 0; pi < passes.length; pi++) {
-      c.strokeStyle = passes[pi].color;
-      c.lineWidth = passes[pi].width;
-      c.beginPath();
-      for (r = 0; r < state.rows; r++) {
-        for (col = 0; col < state.cols; col++) {
-          var cell = state.grid[r][col];
-          var x0 = col * cs, y0 = r * cs;
-          if (cell & N) { c.moveTo(x0, y0); c.lineTo(x0 + cs, y0); }
-          if (cell & W) { c.moveTo(x0, y0); c.lineTo(x0, y0 + cs); }
-          if (r === state.rows - 1 && (cell & S)) { c.moveTo(x0, y0 + cs); c.lineTo(x0 + cs, y0 + cs); }
-          if (col === state.cols - 1 && (cell & E)) { c.moveTo(x0 + cs, y0); c.lineTo(x0 + cs, y0 + cs); }
-        }
-      }
-      c.stroke();
-    }
+    paintWalls(c, wallSegments(), cs, t);
+    paintExit(c, cs, t);
     state.staticDirty = false;
+  }
+
+  // red edges like the corners of your eyes going dark
+  function buildVignette() {
+    var c = vignetteLayer.getContext('2d');
+    var w = state.pw, h = state.ph;
+    c.setTransform(state.dpr, 0, 0, state.dpr, 0, 0);
+    c.clearRect(0, 0, w, h);
+    var g = c.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.3, w / 2, h / 2, Math.max(w, h) * 0.72);
+    g.addColorStop(0, 'rgba(0,0,0,0)');
+    g.addColorStop(0.6, 'rgba(70,6,8,0.25)');
+    g.addColorStop(1, 'rgba(130,12,16,0.6)');
+    c.fillStyle = g;
+    c.fillRect(0, 0, w, h);
+  }
+
+  // film grain, made once and moved around every frame
+  var grain = (function () {
+    var cv = document.createElement('canvas');
+    cv.width = 160; cv.height = 160;
+    var c = cv.getContext('2d');
+    var img = c.createImageData(160, 160);
+    for (var i = 0; i < img.data.length; i += 4) {
+      var v = Math.floor(Math.random() * 255);
+      img.data[i] = v; img.data[i + 1] = v; img.data[i + 2] = v;
+      img.data[i + 3] = Math.random() < 0.5 ? 40 : 0;
+    }
+    c.putImageData(img, 0, 0);
+    return cv;
+  })();
+  var grainPattern = null;
+
+  function drawOrbs(c, cs, t) {
+    var orbs = state.decor.orbs;
+    for (var k = 0; k < orbs.length; k++) {
+      var o = orbs[k];
+      var fl = 0.8 + 0.2 * Math.sin(t * 2.3 + o.phase) + 0.08 * Math.sin(t * 9 + o.phase);
+      var x = o.x * cs, y = o.y * cs, r = o.r * cs;
+      var g = c.createRadialGradient(x, y, 0, x, y, r);
+      g.addColorStop(0, 'rgba(255,165,70,' + (0.55 * fl) + ')');
+      g.addColorStop(0.35, 'rgba(230,120,40,' + (0.28 * fl) + ')');
+      g.addColorStop(1, 'rgba(200,90,30,0)');
+      c.fillStyle = g;
+      c.beginPath(); c.arc(x, y, r, 0, TWO_PI); c.fill();
+    }
   }
 
   // ---------------------------------------------------------------- characters
@@ -1134,7 +1594,8 @@
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(staticLayer, 0, 0);
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    var mo = state.margin * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, mo, mo);
 
     var p = state.player, g = state.ghost;
     var pcx = (p.x + 0.5) * cs, pcy = (p.y + 0.5) * cs;
@@ -1143,7 +1604,7 @@
     // dust from crumbling walls
     for (var i = 0; i < state.particles.length; i++) {
       var pt = state.particles[i];
-      ctx.fillStyle = 'rgba(201,161,74,' + Math.min(1, pt.life) + ')';
+      ctx.fillStyle = 'rgba(210,160,130,' + Math.min(1, pt.life) + ')';
       ctx.fillRect(pt.x * cs - 1.5, pt.y * cs - 1.5, 3, 3);
     }
 
@@ -1152,40 +1613,136 @@
 
     // Darkness with a flickering lantern hole
     var f = fogLayer.getContext('2d');
-    f.setTransform(dpr, 0, 0, dpr, 0, 0);
+    f.setTransform(dpr, 0, 0, dpr, mo, mo);
     f.globalCompositeOperation = 'source-over';
-    f.clearRect(0, 0, state.px, state.px);
-    f.fillStyle = 'rgba(2,0,1,0.95)';
-    f.fillRect(0, 0, state.px, state.px);
+    f.clearRect(-state.margin, -state.margin, state.pw, state.ph);
+    f.fillStyle = 'rgba(3,1,1,0.96)';
+    f.fillRect(-state.margin, -state.margin, state.pw, state.ph);
     f.globalCompositeOperation = 'destination-out';
     var nearFlicker = (g.awake && state.dist <= 4) ? 0.12 : 0.04;
     var rad = state.cfg.light_radius * cs * (1 + nearFlicker * Math.sin(t * 13) + 0.03 * Math.sin(t * 7.3));
-    var hole = f.createRadialGradient(pcx, pcy, rad * 0.25, pcx, pcy, rad);
+    var hole = f.createRadialGradient(pcx, pcy, rad * 0.2, pcx, pcy, rad);
     hole.addColorStop(0, 'rgba(0,0,0,1)');
-    hole.addColorStop(0.7, 'rgba(0,0,0,0.65)');
+    hole.addColorStop(0.6, 'rgba(0,0,0,0.7)');
     hole.addColorStop(1, 'rgba(0,0,0,0)');
     f.fillStyle = hole;
     f.beginPath(); f.arc(pcx, pcy, rad, 0, TWO_PI); f.fill();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.drawImage(fogLayer, 0, 0);
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.setTransform(dpr, 0, 0, dpr, mo, mo);
 
-    // The exit door's light seeps through the darkness
-    var ex = (state.data.exit[1] + 0.5) * cs, ey = (state.data.exit[0] + 0.5) * cs;
+    // warm lantern light on everything near you
+    var warm = ctx.createRadialGradient(pcx, pcy, 0, pcx, pcy, rad);
+    warm.addColorStop(0, 'rgba(255,140,60,0.16)');
+    warm.addColorStop(1, 'rgba(255,140,60,0)');
+    ctx.fillStyle = warm;
+    ctx.beginPath(); ctx.arc(pcx, pcy, rad, 0, TWO_PI); ctx.fill();
+
+    // floating lights drifting through the dark
+    drawOrbs(ctx, cs, t);
+
+    // light spilling from the exit
+    var ep = exitPoint(cs);
     var pulse = 0.35 + Math.sin(t * 2.5) * 0.15;
-    var eg = ctx.createRadialGradient(ex, ey, 1, ex, ey, cs * 1.2);
-    eg.addColorStop(0, 'rgba(140,230,140,' + pulse + ')');
-    eg.addColorStop(1, 'rgba(140,230,140,0)');
+    var eg = ctx.createRadialGradient(ep.x, ep.y, 1, ep.x, ep.y, cs * 1.3);
+    eg.addColorStop(0, 'rgba(170,240,150,' + pulse + ')');
+    eg.addColorStop(1, 'rgba(170,240,150,0)');
     ctx.fillStyle = eg;
-    ctx.beginPath(); ctx.arc(ex, ey, cs * 1.2, 0, TWO_PI); ctx.fill();
+    ctx.beginPath(); ctx.arc(ep.x, ep.y, cs * 1.3, 0, TWO_PI); ctx.fill();
 
     // Her red eyes are visible even in the dark once she is awake
     if (g.awake) { drawGhostEyes(ctx, ghostBox, t); }
+
+    // blood-red vignette and film grain over everything
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.drawImage(vignetteLayer, 0, 0);
+    if (!grainPattern) { grainPattern = ctx.createPattern(grain, 'repeat'); }
+    ctx.save();
+    ctx.globalAlpha = 0.5;
+    ctx.translate(Math.floor(Math.random() * 160), Math.floor(Math.random() * 160));
+    ctx.fillStyle = grainPattern;
+    ctx.fillRect(-160, -160, canvas.width + 160, canvas.height + 160);
+    ctx.restore();
   }
 
-  function drawScare() {
+  // ---------------------------------------------------------------- jumpscare
+  // She appears far away in the dark, flickering... then rushes at you until
+  // her face fills - and overflows - the whole screen, shaking.
+  var scare = { img: null, start: 0, running: false };
+
+  function startScare() {
     var sc = $('scare-canvas');
-    window.BBChars.drawGhostPortrait(sc.getContext('2d'), sc.width, sc.height, true);
+    var dpr = window.devicePixelRatio || 1;
+    sc.width = Math.round(window.innerWidth * dpr);
+    sc.height = Math.round(window.innerHeight * dpr);
+    if (!scare.img) {
+      scare.img = document.createElement('canvas');
+      scare.img.width = 1000;
+      scare.img.height = 1000;
+      window.BBChars.drawGhostPortrait(scare.img.getContext('2d'), 1000, 1000, true);
+    }
+    scare.start = performance.now();
+    scare.running = true;
+    $('jumpscare').classList.add('show');
+    requestAnimationFrame(scareFrame);
+  }
+
+  function stopScare() {
+    scare.running = false;
+    $('jumpscare').classList.remove('show');
+  }
+
+  function scareFrame(now) {
+    if (!scare.running) { return; }
+    var sc = $('scare-canvas');
+    var c = sc.getContext('2d');
+    var W = sc.width, H = sc.height;
+    var t = (now - scare.start) / 1000;
+    c.setTransform(1, 0, 0, 1, 0, 0);
+    c.fillStyle = '#000';
+    c.fillRect(0, 0, W, H);
+
+    var base = Math.max(H, W * 0.62);
+    var scale;
+    if (t < 0.22) {
+      scale = 0.2 + t * 0.3;                            // far away, barely there
+    } else if (t < 0.55) {
+      var k = (t - 0.22) / 0.33;
+      scale = 0.27 + Math.pow(k, 2.4) * 1.55;           // the lunge, faster and faster
+    } else if (t < 0.8) {
+      scale = 1.82 - (t - 0.55) / 0.25 * 0.3;           // bursts past the screen, then settles
+    } else {
+      scale = 1.52 + Math.sin(t * 2.5) * 0.03;          // right in your face
+    }
+    var size = base * scale;
+    var shake = t > 0.4 ? base * (t < 1.4 ? 0.018 : 0.006) : 0;
+    var x = W / 2 - size / 2 + (Math.random() - 0.5) * shake * 2;
+    var y = H / 2 - size * 0.46 + (Math.random() - 0.5) * shake * 2;
+
+    var alpha = 1;
+    if (t < 0.55 && Math.random() < 0.3) { alpha = 0.25; }   // flicker as she comes
+    c.globalAlpha = alpha;
+    // a smeared after-image while she rushes forward
+    if (t > 0.3 && t < 0.6) {
+      c.globalAlpha = alpha * 0.35;
+      var s2 = size * 0.85;
+      c.drawImage(scare.img, W / 2 - s2 / 2, H / 2 - s2 * 0.46, s2, s2);
+      c.globalAlpha = alpha;
+    }
+    c.drawImage(scare.img, x, y, size, size);
+    c.globalAlpha = 1;
+
+    // blood-red flash on impact
+    if (t > 0.5 && t < 0.85) {
+      c.fillStyle = 'rgba(190,0,20,' + (0.5 * (1 - (t - 0.5) / 0.35)) + ')';
+      c.fillRect(0, 0, W, H);
+    }
+    var vg = c.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.25, W / 2, H / 2, Math.max(W, H) * 0.75);
+    vg.addColorStop(0, 'rgba(0,0,0,0)');
+    vg.addColorStop(1, 'rgba(0,0,0,0.85)');
+    c.fillStyle = vg;
+    c.fillRect(0, 0, W, H);
+    requestAnimationFrame(scareFrame);
   }
 
   // ================================================================== LOOP

@@ -187,15 +187,7 @@ h2 {
 
 /* ---------------------------------------------------------- jumpscare */
 #jumpscare {
-  position: fixed; inset: 0; z-index: 30; display: none; align-items: center; justify-content: center;
-  background: radial-gradient(circle, rgba(163, 18, 31, 0.6), #000 70%);
+  position: fixed; inset: 0; z-index: 30; display: none; background: #000;
 }
-#jumpscare.show { display: flex; animation: scare 0.9s ease-out; }
-#scare-canvas { width: min(90vw, 90vh); height: min(90vw, 90vh); }
-@keyframes scare {
-  0% { transform: scale(0.3); filter: brightness(3); }
-  15% { transform: scale(1.15); }
-  30% { transform: scale(0.95) translateX(-8px); }
-  45% { transform: scale(1.05) translateX(8px); }
-  100% { transform: scale(1); filter: brightness(1); }
-}
+#jumpscare.show { display: block; }
+#scare-canvas { display: block; width: 100vw; height: 100vh; }
