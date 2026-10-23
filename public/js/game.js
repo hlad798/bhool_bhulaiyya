@@ -26,6 +26,7 @@
     w: 'up', s: 'down', a: 'left', d: 'right',
     W: 'up', S: 'down', A: 'left', D: 'right'
   };
+  var TWO_PI = Math.PI * 2;
 
   // ---------------------------------------------------------------- dom
   function $(id) { return document.getElementById(id); }
@@ -69,27 +70,58 @@
   };
 
   // ================================================================== AUDIO
-  // Every sound is synthesised live with the Web Audio API - no sound files needed.
+  // All sounds are built in the browser with the Web Audio API - no sound files.
+  // The heartbeat and the ghungroo bells are pre-rendered once into sample
+  // buffers (like tiny recordings), and the scream is a voice shaped by
+  // vowel formants. Everything except the heartbeat echoes through a
+  // stone-hall reverb so it sounds like it is inside the haveli.
   var Sound = {
     ctx: null,
     master: null,
+    reverb: null,
     noiseBuf: null,
     droneFilter: null,
     droneOn: false,
     muted: false,
+    heartLub: null,
+    heartDub: null,
+    bells: [],
 
-    init: function () {
+    init: function (customCtx) {
       if (this.ctx) { return; }
       var AC = window.AudioContext || window.webkitAudioContext;
-      if (!AC) { return; }
-      this.ctx = new AC();
-      this.master = this.ctx.createGain();
+      if (!customCtx && !AC) { return; }
+      var c = customCtx || new AC();
+      this.ctx = c;
+
+      // A compressor stops the loud scream from distorting the speakers.
+      var comp = c.createDynamicsCompressor();
+      comp.threshold.value = -16;
+      comp.knee.value = 12;
+      comp.ratio.value = 4;
+      comp.attack.value = 0.004;
+      comp.release.value = 0.25;
+      comp.connect(c.destination);
+      this.master = c.createGain();
       this.master.gain.value = 0.9;
-      this.master.connect(this.ctx.destination);
-      var len = this.ctx.sampleRate * 2;
-      this.noiseBuf = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
+      this.master.connect(comp);
+
+      var len = c.sampleRate * 2;
+      this.noiseBuf = c.createBuffer(1, len, c.sampleRate);
       var data = this.noiseBuf.getChannelData(0);
       for (var i = 0; i < len; i++) { data[i] = Math.random() * 2 - 1; }
+
+      this.reverb = c.createConvolver();
+      this.reverb.buffer = this.makeHallImpulse(3.2);
+      var wet = c.createGain();
+      wet.gain.value = 0.55;
+      this.reverb.connect(wet);
+      wet.connect(this.master);
+
+      this.heartLub = this.renderHeartThump(true);
+      this.heartDub = this.renderHeartThump(false);
+      this.bells = [];
+      for (var b = 0; b < 5; b++) { this.bells.push(this.renderGhungroo()); }
     },
 
     resume: function () {
@@ -121,113 +153,313 @@
       return shaper;
     },
 
+    // Stone-hall echo: stereo decaying noise that gets darker as it fades.
+    makeHallImpulse: function (seconds) {
+      var c = this.ctx;
+      var sr = c.sampleRate;
+      var len = Math.floor(sr * seconds);
+      var buf = c.createBuffer(2, len, sr);
+      for (var ch = 0; ch < 2; ch++) {
+        var d = buf.getChannelData(ch);
+        var lp = 0;
+        for (var i = 0; i < len; i++) {
+          var u = i / len;
+          var x = (Math.random() * 2 - 1) * Math.pow(1 - u, 2.6);
+          var a = 0.55 - 0.47 * u;
+          lp += a * (x - lp);
+          d[i] = lp;
+        }
+        // a few early reflections off the walls
+        var taps = [0.011, 0.023, 0.037, 0.052, 0.071];
+        for (var k = 0; k < taps.length; k++) {
+          var idx = Math.floor((taps[k] + ch * 0.003) * sr);
+          if (idx < len) { d[idx] += 0.5 / (k + 1); }
+        }
+      }
+      return buf;
+    },
+
+    // One heart sound: a soft, muffled low thud with a pitch drop,
+    // like a real heartbeat heard from inside the chest.
+    renderHeartThump: function (isLub) {
+      var c = this.ctx;
+      var sr = c.sampleRate;
+      var len = Math.floor(sr * 0.3);
+      var buf = c.createBuffer(1, len, sr);
+      var d = buf.getChannelData(0);
+      var fStart = isLub ? 78 : 95;
+      var fEnd = isLub ? 50 : 60;
+      var tau = isLub ? 0.048 : 0.036;
+      var phase = 0, lpn = 0, i, t;
+      for (i = 0; i < len; i++) {
+        t = i / sr;
+        var f = fEnd + (fStart - fEnd) * Math.exp(-t / 0.035);
+        phase += TWO_PI * f / sr;
+        var env = (1 - Math.exp(-t / 0.006)) * Math.exp(-t / tau);
+        var tone = Math.sin(phase) + 0.7 * Math.sin(phase * 2.02) + 0.25 * Math.sin(phase * 3.1);
+        lpn += 0.04 * ((Math.random() * 2 - 1) - lpn);
+        var thud = lpn * 6 * (1 - Math.exp(-t / 0.002)) * Math.exp(-t / (tau * 0.45));
+        d[i] = (tone * env + thud * 0.6);
+      }
+      // two-pole low-pass at ~320 Hz: the chest muffles everything bright,
+      // but enough low-mid stays in for phone and laptop speakers to play it
+      var a = 1 - Math.exp(-TWO_PI * 320 / sr);
+      var y1 = 0, y2 = 0, peak = 0;
+      for (i = 0; i < len; i++) {
+        y1 += a * (d[i] - y1);
+        y2 += a * (y1 - y2);
+        d[i] = Math.tanh(y2 * 2.6);
+        if (Math.abs(d[i]) > peak) { peak = Math.abs(d[i]); }
+      }
+      var gain = (isLub ? 0.95 : 0.7) / (peak || 1);
+      for (i = 0; i < len; i++) { d[i] *= gain; }
+      return buf;
+    },
+
+    // One "step" of ghungroo: dozens of tiny brass bells struck together,
+    // each with metallic (inharmonic) overtones plus the rattle of its pellet.
+    renderGhungroo: function () {
+      var c = this.ctx;
+      var sr = c.sampleRate;
+      var len = Math.floor(sr * 0.9);
+      var buf = c.createBuffer(2, len, sr);
+      var L = buf.getChannelData(0), R = buf.getChannelData(1);
+      var ratios = [1, 1.51, 2.33, 3.07];
+      var amps = [1, 0.55, 0.32, 0.18];
+      var taus = [0.13, 0.085, 0.055, 0.035];
+      var count = 24 + Math.floor(Math.random() * 14);
+      for (var b = 0; b < count; b++) {
+        // most bells strike together, some settle a moment later
+        var onset = Math.random() < 0.72 ? Math.random() * 0.03 : 0.06 + Math.random() * 0.09;
+        var start = Math.floor(onset * sr);
+        var f0 = 2300 + Math.random() * 2800;
+        var vol = (0.25 + Math.random() * 0.75) * (onset > 0.05 ? 0.55 : 1);
+        var spread = Math.random();
+        var decayScale = 0.7 + Math.random() * 0.6;
+        var beat = 6 + Math.random() * 14;
+        for (var p = 0; p < ratios.length; p++) {
+          var w = TWO_PI * f0 * ratios[p] / sr;
+          if (f0 * ratios[p] > sr * 0.45) { continue; }
+          var tau = taus[p] * decayScale;
+          var stop = Math.min(len, start + Math.floor(tau * 7 * sr));
+          var k = 2 * Math.cos(w);
+          var ph = Math.random() * TWO_PI;
+          var s1 = Math.sin(ph - w), s2 = Math.sin(ph - 2 * w);
+          for (var i = start; i < stop; i++) {
+            var s0 = k * s1 - s2;
+            s2 = s1; s1 = s0;
+            var t = (i - start) / sr;
+            var env = Math.min(1, t * 1500) * Math.exp(-t / tau) * (1 + 0.25 * Math.sin(TWO_PI * beat * t));
+            var v = s0 * env * amps[p] * vol;
+            L[i] += v * (1 - spread * 0.6);
+            R[i] += v * (0.4 + spread * 0.6);
+          }
+        }
+        // pellet rattle: a few tiny bright clicks
+        var clicks = 2 + Math.floor(Math.random() * 3);
+        for (var q = 0; q < clicks; q++) {
+          var cs = start + Math.floor(Math.random() * 0.025 * sr);
+          var prev = 0;
+          for (var j = 0; j < 70 && cs + j < len; j++) {
+            var nz = Math.random() * 2 - 1;
+            var hp = (nz - prev) * Math.exp(-j / 18) * 0.35 * vol;
+            prev = nz;
+            L[cs + j] += hp * (1 - spread * 0.5);
+            R[cs + j] += hp * (0.5 + spread * 0.5);
+          }
+        }
+      }
+      var peak = 0, n;
+      for (n = 0; n < len; n++) { peak = Math.max(peak, Math.abs(L[n]), Math.abs(R[n])); }
+      var g = 0.9 / (peak || 1);
+      for (n = 0; n < len; n++) { L[n] *= g; R[n] *= g; }
+      return buf;
+    },
+
+    playBuffer: function (buf, vol, opts) {
+      if (!this.ctx || !buf) { return; }
+      opts = opts || {};
+      var c = this.ctx;
+      var src = c.createBufferSource();
+      src.buffer = buf;
+      src.playbackRate.value = opts.rate || 1;
+      var g = c.createGain();
+      g.gain.value = Math.max(0, vol);
+      src.connect(g);
+      var node = g;
+      if (typeof opts.pan === 'number' && c.createStereoPanner) {
+        var pan = c.createStereoPanner();
+        pan.pan.value = Math.max(-0.9, Math.min(0.9, opts.pan));
+        g.connect(pan);
+        node = pan;
+      }
+      if (opts.lowpass) {
+        var lp = c.createBiquadFilter();
+        lp.type = 'lowpass';
+        lp.frequency.value = opts.lowpass;
+        node.connect(lp);
+        node = lp;
+      }
+      node.connect(this.master);
+      if (opts.wet) {
+        var send = c.createGain();
+        send.gain.value = opts.wet;
+        node.connect(send);
+        send.connect(this.reverb);
+      }
+      src.start(opts.when || c.currentTime);
+    },
+
+    // lub ... dub. The gap between them shrinks as the heart races.
+    heartbeat: function (vol, gap) {
+      if (!this.ctx) { return; }
+      var t = this.ctx.currentTime + 0.01;
+      this.playBuffer(this.heartLub, vol, { when: t });
+      this.playBuffer(this.heartDub, vol, { when: t + gap });
+    },
+
+    ghungroo: function (vol, pan) {
+      if (!this.ctx || !this.bells.length) { return; }
+      var buf = this.bells[Math.floor(Math.random() * this.bells.length)];
+      this.playBuffer(buf, vol, {
+        rate: 0.93 + Math.random() * 0.14,
+        pan: typeof pan === 'number' ? pan : 0,
+        wet: 0.7
+      });
+    },
+
     startDrone: function () {
       if (!this.ctx || this.droneOn) { return; }
       this.droneOn = true;
       var c = this.ctx;
       var g = c.createGain();
-      g.gain.value = 0.07;
+      g.gain.value = 0.06;
       var f = c.createBiquadFilter();
       f.type = 'lowpass';
-      f.frequency.value = 160;
-      f.Q.value = 6;
+      f.frequency.value = 150;
+      f.Q.value = 5;
       var o1 = c.createOscillator(); o1.type = 'sawtooth'; o1.frequency.value = 55;
-      var o2 = c.createOscillator(); o2.type = 'sawtooth'; o2.frequency.value = 55.7;
+      var o2 = c.createOscillator(); o2.type = 'sawtooth'; o2.frequency.value = 55.6;
       var o3 = c.createOscillator(); o3.type = 'sine'; o3.frequency.value = 82.4;
       o1.connect(f); o2.connect(f); o3.connect(f);
       f.connect(g); g.connect(this.master);
       var wind = this.noise();
-      var bp = c.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 500; bp.Q.value = 0.6;
-      var wg = c.createGain(); wg.gain.value = 0.018;
+      var bp = c.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 450; bp.Q.value = 0.6;
+      var wg = c.createGain(); wg.gain.value = 0.02;
+      var lfo = c.createOscillator(); lfo.frequency.value = 0.13;
+      var lfoG = c.createGain(); lfoG.gain.value = 0.012;
+      lfo.connect(lfoG); lfoG.connect(wg.gain);
       wind.connect(bp); bp.connect(wg); wg.connect(this.master);
-      o1.start(); o2.start(); o3.start(); wind.start();
+      var ws = c.createGain(); ws.gain.value = 0.5;
+      wg.connect(ws); ws.connect(this.reverb);
+      o1.start(); o2.start(); o3.start(); wind.start(); lfo.start();
       this.droneFilter = f;
     },
 
     setTension: function (t) {
       if (!this.droneFilter) { return; }
-      this.droneFilter.frequency.setTargetAtTime(160 + 900 * t, this.ctx.currentTime, 0.4);
+      this.droneFilter.frequency.setTargetAtTime(150 + 800 * t, this.ctx.currentTime, 0.4);
     },
 
-    thump: function (t, vol, freq) {
-      var c = this.ctx;
-      var o = c.createOscillator();
-      var g = c.createGain();
-      o.type = 'sine';
-      o.frequency.setValueAtTime(freq * 1.8, t);
-      o.frequency.exponentialRampToValueAtTime(freq, t + 0.08);
-      g.gain.setValueAtTime(0.0001, t);
-      g.gain.exponentialRampToValueAtTime(Math.max(0.001, vol), t + 0.012);
-      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.22);
-      o.connect(g); g.connect(this.master);
-      o.start(t); o.stop(t + 0.25);
-    },
-
-    heartbeat: function (vol) {
+    // A screaming voice: two slightly mismatched voices on a sawtooth source,
+    // shaped through "aaah" vowel formants, with a shaking pitch, breath
+    // noise and rasp, ringing through the haveli's echo.
+    // opts.pitch lowers/raises the voice, opts.wet = how much echo.
+    scream: function (vol, dur, opts) {
       if (!this.ctx) { return; }
-      var t = this.ctx.currentTime;
-      this.thump(t, vol, 62);
-      this.thump(t + 0.16, vol * 0.7, 52);
-    },
-
-    ghungroo: function (vol) {
-      if (!this.ctx) { return; }
+      opts = opts || {};
       var c = this.ctx;
-      for (var i = 0; i < 5; i++) {
-        var t = c.currentTime + Math.random() * 0.16;
-        var o = c.createOscillator();
-        var g = c.createGain();
-        o.type = 'sine';
-        o.frequency.value = 3000 + Math.random() * 1900;
-        g.gain.setValueAtTime(0.0001, t);
-        g.gain.exponentialRampToValueAtTime(Math.max(0.001, vol * 0.25), t + 0.003);
-        g.gain.exponentialRampToValueAtTime(0.0001, t + 0.14);
-        o.connect(g); g.connect(this.master);
-        o.start(t); o.stop(t + 0.16);
+      var t = c.currentTime + 0.02;
+      var pitch = opts.pitch || 1;
+
+      var out = c.createGain();
+      out.gain.setValueAtTime(0.0001, t);
+      out.gain.exponentialRampToValueAtTime(vol, t + 0.07);
+      out.gain.setValueAtTime(vol, t + dur * 0.55);
+      out.gain.linearRampToValueAtTime(vol * 0.8, t + dur * 0.8);
+      out.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      out.connect(this.master);
+      var send = c.createGain();
+      send.gain.value = typeof opts.wet === 'number' ? opts.wet : 0.7;
+      out.connect(send);
+      send.connect(this.reverb);
+
+      var rasp = this.distortion(35);
+      rasp.connect(out);
+
+      var bus = c.createGain();
+      bus.gain.value = 1;
+      var growl = c.createOscillator();
+      growl.frequency.value = 38;
+      var growlDepth = c.createGain();
+      growlDepth.gain.value = 0.22;
+      growl.connect(growlDepth);
+      growlDepth.connect(bus.gain);
+      growl.start(t);
+      growl.stop(t + dur + 0.1);
+
+      var formants = [
+        { f: 950, q: 5, g: 1.0 },
+        { f: 1550, q: 7, g: 0.7 },
+        { f: 2850, q: 9, g: 0.45 },
+        { f: 4100, q: 11, g: 0.22 }
+      ];
+      for (var i = 0; i < formants.length; i++) {
+        var bp = c.createBiquadFilter();
+        bp.type = 'bandpass';
+        bp.frequency.value = formants[i].f * (0.9 + 0.1 * pitch);
+        bp.Q.value = formants[i].q;
+        var fg = c.createGain();
+        fg.gain.value = formants[i].g * 3;
+        bus.connect(bp);
+        bp.connect(fg);
+        fg.connect(rasp);
       }
-    },
 
-    shriek: function (vol, dur) {
-      if (!this.ctx) { return; }
-      var c = this.ctx;
-      var t = c.currentTime;
-      var g = c.createGain();
-      g.gain.setValueAtTime(0.0001, t);
-      g.gain.exponentialRampToValueAtTime(vol, t + 0.04);
-      g.gain.setValueAtTime(vol, t + dur * 0.6);
-      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-      g.connect(this.master);
-
-      var shaper = this.distortion(300);
-      shaper.connect(g);
-      var ratios = [1, 1.26, 1.49];
-      for (var i = 0; i < ratios.length; i++) {
-        var o = c.createOscillator();
-        o.type = 'sawtooth';
-        o.frequency.setValueAtTime(520 * ratios[i], t);
-        o.frequency.exponentialRampToValueAtTime(1500 * ratios[i], t + dur * 0.25);
-        o.frequency.exponentialRampToValueAtTime(800 * ratios[i], t + dur);
-        var lfo = c.createOscillator();
-        lfo.frequency.value = 9 + i * 2;
-        var lg = c.createGain();
-        lg.gain.value = 60;
-        lfo.connect(lg); lg.connect(o.frequency);
-        var og = c.createGain();
-        og.gain.value = 0.25;
-        o.connect(og); og.connect(shaper);
-        o.start(t); o.stop(t + dur);
-        lfo.start(t); lfo.stop(t + dur);
+      var voices = [{ ratio: 1, delay: 0, gain: 0.6 }, { ratio: 1.065, delay: 0.07, gain: 0.35 }];
+      for (var v = 0; v < voices.length; v++) {
+        var vd = voices[v];
+        var vDur = dur - vd.delay;
+        var steps = 240;
+        var curve = new Float32Array(steps);
+        var jitter = 0;
+        for (var k = 0; k < steps; k++) {
+          var u = k / (steps - 1);
+          var f;
+          if (u < 0.06) {
+            f = 520 + (1180 - 520) * (u / 0.06);
+          } else if (u < 0.74) {
+            f = 1180 + 150 * Math.sin((u - 0.06) * 4.2);
+          } else {
+            f = 1250 * (1 - 0.45 * Math.pow((u - 0.74) / 0.26, 1.4));
+          }
+          jitter = jitter * 0.85 + (Math.random() - 0.5) * 0.035;
+          f *= 1 + 0.028 * Math.sin(TWO_PI * 5.6 * u * vDur) + jitter;
+          curve[k] = f * vd.ratio * pitch;
+        }
+        var osc = c.createOscillator();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueCurveAtTime(curve, t + vd.delay, vDur);
+        var vg = c.createGain();
+        vg.gain.value = vd.gain;
+        osc.connect(vg);
+        vg.connect(bus);
+        osc.start(t + vd.delay);
+        osc.stop(t + dur + 0.05);
       }
-      var n = this.noise();
-      var bp = c.createBiquadFilter();
-      bp.type = 'bandpass';
-      bp.Q.value = 1.2;
-      bp.frequency.setValueAtTime(1200, t);
-      bp.frequency.exponentialRampToValueAtTime(3200, t + dur * 0.3);
-      var ng = c.createGain();
-      ng.gain.value = 0.7;
-      n.connect(bp); bp.connect(ng); ng.connect(g);
-      n.start(t); n.stop(t + dur);
+
+      var breath = this.noise();
+      var bbp = c.createBiquadFilter();
+      bbp.type = 'bandpass';
+      bbp.frequency.value = 3000;
+      bbp.Q.value = 0.7;
+      var bg = c.createGain();
+      bg.gain.value = 0.3;
+      breath.connect(bbp);
+      bbp.connect(bg);
+      bg.connect(out);
+      breath.start(t);
+      breath.stop(t + dur + 0.05);
     },
 
     crumble: function () {
@@ -235,13 +467,15 @@
       var c = this.ctx;
       var t = c.currentTime;
       var n = this.noise();
-      var lp = c.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 420;
+      var lp = c.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 500;
       var g = c.createGain();
-      g.gain.setValueAtTime(0.8, t);
-      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.8);
+      g.gain.setValueAtTime(0.9, t);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 1.0);
       n.connect(lp); lp.connect(g); g.connect(this.master);
-      n.start(t); n.stop(t + 0.85);
-      this.thump(t, 0.9, 38);
+      var send = c.createGain(); send.gain.value = 0.6;
+      g.connect(send); send.connect(this.reverb);
+      n.start(t); n.stop(t + 1.05);
+      this.playBuffer(this.heartLub, 1, { rate: 0.6, wet: 0.5 });
     },
 
     wrong: function () {
@@ -253,7 +487,7 @@
       o.type = 'sawtooth';
       o.frequency.setValueAtTime(140, t);
       o.frequency.exponentialRampToValueAtTime(45, t + 0.6);
-      g.gain.setValueAtTime(0.35, t);
+      g.gain.setValueAtTime(0.3, t);
       g.gain.exponentialRampToValueAtTime(0.0001, t + 0.65);
       o.connect(g); g.connect(this.master);
       o.start(t); o.stop(t + 0.7);
@@ -270,13 +504,16 @@
         o.type = 'triangle';
         o.frequency.value = notes[i];
         g.gain.setValueAtTime(0.0001, t);
-        g.gain.exponentialRampToValueAtTime(0.25, t + 0.02);
-        g.gain.exponentialRampToValueAtTime(0.0001, t + 0.7);
+        g.gain.exponentialRampToValueAtTime(0.22, t + 0.02);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + 0.8);
         o.connect(g); g.connect(this.master);
-        o.start(t); o.stop(t + 0.75);
+        var s = c.createGain(); s.gain.value = 0.4;
+        g.connect(s); s.connect(this.reverb);
+        o.start(t); o.stop(t + 0.85);
       }
     }
   };
+  window.BBSound = Sound;
 
   // ================================================================== HELPERS
   function showScreen(id) {
@@ -328,6 +565,11 @@
     el.classList.add('show');
     clearTimeout(whisperTimer);
     whisperTimer = setTimeout(function () { el.classList.remove('show'); }, 3600);
+  }
+
+  function ghostPan() {
+    var span = Math.max(1, state.cols / 2);
+    return (state.ghost.x - state.player.x) / span;
   }
 
   // ================================================================== LEVELS
@@ -396,7 +638,7 @@
 
     showMessage('Level ' + data.config.level + ': ' + data.config.name,
       'Manjulika wakes in <b>' + data.config.wake_delay + ' seconds</b> and moves at <b>' +
-      data.config.ghost_speed + ' steps per second</b>.<br>You have <b>' +
+      data.config.ghost_speed + ' steps per second</b>.<br>You have only <b>' +
       data.config.question_time + ' seconds</b> to answer each riddle. Find the glowing door.',
       [{ label: 'Begin', primary: true, onClick: function () {
         Sound.resume();
@@ -445,7 +687,7 @@
     state.heldDir = null;
     $('modal-question').classList.remove('show');
     $('board-wrap').classList.remove('shake');
-    Sound.shriek(1.0, 1.7);
+    Sound.scream(1.0, 3.6, { wet: 0.6 });
     drawScare();
     $('jumpscare').classList.add('show');
     setTimeout(function () {
@@ -453,7 +695,7 @@
       api('/api/rank', { total: state.total, cleared: state.level - 1 }).then(function (res) {
         showCaught(reason, res.title);
       }).catch(function () { showCaught(reason, ''); });
-    }, 1700);
+    }, 2600);
   }
 
   function showCaught(reason, title) {
@@ -493,7 +735,7 @@
       })(q.options[i]);
     }
     $('modal-question').classList.add('show');
-    Sound.ghungroo(0.6);
+    Sound.ghungroo(0.55, ghostPan());
   }
 
   function setOptionsDisabled(flag) {
@@ -634,7 +876,10 @@
     }
     state.distMap = bfsFromPlayer();
     state.dist = state.distMap[g.r * cols + g.c];
-    if (state.dist <= 9) { Sound.ghungroo(0.15 + (9 - state.dist) * 0.05); }
+    // Her anklet bells ring with every step - louder as she gets closer.
+    if (state.dist <= 12) {
+      Sound.ghungroo(0.08 + Math.pow((12 - state.dist) / 12, 1.6) * 0.75, ghostPan());
+    }
   }
 
   // ================================================================== UPDATE
@@ -658,7 +903,8 @@
       var frac = Math.max(0, state.question.remaining / state.cfg.question_time);
       $('q-timer-fill').style.width = (frac * 100) + '%';
       state.heartAcc += dt;
-      if (state.heartAcc >= 0.45) { state.heartAcc = 0; Sound.heartbeat(0.5); }
+      var qBeat = 0.75 - (1 - frac) * 0.4;
+      if (state.heartAcc >= qBeat) { state.heartAcc = 0; Sound.heartbeat(0.6 + (1 - frac) * 0.35, 0.2); }
       if (state.question.remaining <= 0) { submitAnswer(null); }
       return;
     }
@@ -688,7 +934,7 @@
       $('hud-ghost').classList.remove('awake');
       if (g.wakeIn <= 0) {
         g.awake = true;
-        Sound.shriek(0.35, 0.9);
+        Sound.scream(0.32, 2.6, { wet: 1.4, pitch: 0.82 });
         whisper(pick(state.data.whispers.awake));
         state.whisperAcc = 0;
       }
@@ -704,21 +950,21 @@
       $('hud-ghost').classList.add('awake');
     }
 
-    // Heartbeat: faster and louder as she closes in
+    // Heartbeat: faster and louder as she closes in (about 60 -> 180 bpm)
     var d = g.awake ? Math.max(1, state.dist) : 20;
     var closeness = g.awake ? Math.max(0, Math.min(1, (16 - d) / 15)) : 0;
-    var bpm = 62 + closeness * 128;
+    var bpm = 60 + closeness * 120;
     state.heartAcc += dt;
     if (state.heartAcc >= 60 / bpm) {
       state.heartAcc = 0;
-      Sound.heartbeat(0.25 + closeness * 0.75);
+      Sound.heartbeat(0.35 + closeness * 0.65, 0.26 - closeness * 0.11);
     }
     Sound.setTension(closeness);
 
-    // Scream when she is too near
+    // Shriek when she is too near
     if (g.awake && state.dist <= 2 && state.nearArmed) {
       state.nearArmed = false;
-      Sound.shriek(0.5, 0.75);
+      Sound.scream(0.55, 1.6, { wet: 0.9 });
       whisper(pick(state.data.whispers.near));
     }
     if (state.dist >= 5) { state.nearArmed = true; }
@@ -824,105 +1070,60 @@
     state.staticDirty = false;
   }
 
-  // An original spectral figure: pale face, long dark hair, glowing red eyes.
-  function drawGhost(c, cx, cy, s, t, alpha, scream) {
+  // ---------------------------------------------------------------- characters
+  // The figures are painted in characters.js (window.BBChars) as sprites.
+  // Here we only place them, add the live glows and animate the lantern flame.
+  var FIGURE_H = 1.45;   // figure height in cells
+
+  function drawGhostSprite(c, cx, cy, cs, t, alpha) {
+    var spr = window.BBChars.ghostFrame(t);
+    var h = cs * FIGURE_H, w = h * spr.width / spr.height;
+    var bob = Math.sin(t * 3) * cs * 0.04;
+    var top = cy - h * 0.6 + bob;
     c.save();
     c.globalAlpha = alpha;
-    c.translate(cx, cy + Math.sin(t * 3) * s * 0.04);
-
-    var aura = c.createRadialGradient(0, 0, s * 0.05, 0, 0, s * 0.85);
-    aura.addColorStop(0, 'rgba(255,50,70,0.35)');
+    var aura = c.createRadialGradient(cx, cy - h * 0.15, 0, cx, cy - h * 0.15, h * 0.6);
+    aura.addColorStop(0, 'rgba(255,50,70,0.25)');
     aura.addColorStop(1, 'rgba(255,50,70,0)');
     c.fillStyle = aura;
-    c.beginPath(); c.arc(0, 0, s * 0.85, 0, Math.PI * 2); c.fill();
-
-    // flowing robe
-    var robe = c.createLinearGradient(0, -s * 0.2, 0, s * 0.55);
-    robe.addColorStop(0, 'rgba(236,230,224,0.95)');
-    robe.addColorStop(1, 'rgba(236,230,224,0.04)');
-    c.fillStyle = robe;
-    c.beginPath();
-    c.moveTo(-s * 0.18, -s * 0.08);
-    c.quadraticCurveTo(-s * 0.36, s * 0.2, -s * 0.33, s * 0.5);
-    for (var i = 0; i <= 6; i++) {
-      var hx = -s * 0.33 + i * (s * 0.66 / 6);
-      var hy = s * 0.5 + Math.sin(t * 6 + i * 1.3) * s * 0.05 + (i % 2 ? s * 0.06 : 0);
-      c.lineTo(hx, hy);
-    }
-    c.quadraticCurveTo(s * 0.36, s * 0.2, s * 0.18, -s * 0.08);
-    c.closePath();
-    c.fill();
-
-    // long dark hair behind the face
-    c.fillStyle = '#060203';
-    c.beginPath();
-    c.ellipse(0, -s * 0.2, s * 0.19, s * 0.22, 0, 0, Math.PI * 2);
-    c.fill();
-    var sway = Math.sin(t * 2.4) * s * 0.03;
-    c.beginPath();
-    c.moveTo(-s * 0.19, -s * 0.2);
-    c.quadraticCurveTo(-s * 0.26, s * 0.1, -s * 0.2 + sway, s * 0.34);
-    c.lineTo(-s * 0.08, s * 0.05);
-    c.lineTo(s * 0.08, s * 0.05);
-    c.lineTo(s * 0.2 + sway, s * 0.34);
-    c.quadraticCurveTo(s * 0.26, s * 0.1, s * 0.19, -s * 0.2);
-    c.closePath();
-    c.fill();
-
-    // pale face
-    c.fillStyle = '#d8d2cc';
-    c.beginPath();
-    c.ellipse(0, -s * 0.17, s * 0.12, s * 0.15, 0, 0, Math.PI * 2);
-    c.fill();
-    // hair falling over the forehead
-    c.fillStyle = '#060203';
-    c.beginPath();
-    c.ellipse(0, -s * 0.31, s * 0.15, s * 0.08, 0, 0, Math.PI * 2);
-    c.fill();
-    // dark sunken eye sockets
-    c.fillStyle = 'rgba(30,0,4,0.9)';
-    c.beginPath(); c.ellipse(-s * 0.05, -s * 0.2, s * 0.035, s * 0.028, 0, 0, Math.PI * 2); c.fill();
-    c.beginPath(); c.ellipse(s * 0.05, -s * 0.2, s * 0.035, s * 0.028, 0, 0, Math.PI * 2); c.fill();
-    drawEyes(c, 0, 0, s, t);
-    // mouth
-    c.fillStyle = '#1a0003';
-    c.beginPath();
-    c.ellipse(0, -s * 0.09, s * (scream ? 0.05 : 0.025), s * (scream ? 0.07 : 0.012), 0, 0, Math.PI * 2);
-    c.fill();
+    c.beginPath(); c.arc(cx, cy - h * 0.15, h * 0.6, 0, TWO_PI); c.fill();
+    c.drawImage(spr, cx - w / 2, top, w, h);
     c.restore();
+    return { left: top, w: w, h: h, x0: cx - w / 2 };
   }
 
-  function drawEyes(c, cx, cy, s, t) {
+  function drawGhostEyes(c, box, t) {
     var glow = 0.75 + Math.sin(t * 9) * 0.25;
+    var eyes = window.BBChars.ghostEyes;
     c.save();
     c.shadowColor = '#ff1a2e';
-    c.shadowBlur = s * 0.25;
+    c.shadowBlur = box.h * 0.06;
     c.fillStyle = 'rgba(255,40,60,' + glow + ')';
-    c.beginPath(); c.arc(cx - s * 0.05, cy - s * 0.2, s * 0.018, 0, Math.PI * 2); c.fill();
-    c.beginPath(); c.arc(cx + s * 0.05, cy - s * 0.2, s * 0.018, 0, Math.PI * 2); c.fill();
+    for (var i = 0; i < eyes.length; i++) {
+      c.beginPath();
+      c.arc(box.x0 + eyes[i][0] * box.w, box.left + eyes[i][1] * box.h, Math.max(1.2, box.h * 0.008), 0, TWO_PI);
+      c.fill();
+    }
     c.restore();
   }
 
-  function drawPlayer(c, cx, cy, s, t) {
-    // lantern glow
-    var lg = c.createRadialGradient(cx + s * 0.2, cy, 1, cx + s * 0.2, cy, s * 0.5);
-    lg.addColorStop(0, 'rgba(255,170,70,0.7)');
+  function drawPlayerSprite(c, cx, cy, cs, t) {
+    var spr = window.BBChars.player;
+    var h = cs * FIGURE_H * 0.95, w = h * spr.width / spr.height;
+    var top = cy - h * 0.6;
+    var x0 = cx - w / 2;
+    var fx = x0 + window.BBChars.playerFlame[0] * w, fy = top + window.BBChars.playerFlame[1] * h;
+    var lg = c.createRadialGradient(fx, fy, 1, fx, fy, cs * 0.6);
+    lg.addColorStop(0, 'rgba(255,170,70,0.55)');
     lg.addColorStop(1, 'rgba(255,170,70,0)');
     c.fillStyle = lg;
-    c.beginPath(); c.arc(cx + s * 0.2, cy, s * 0.5, 0, Math.PI * 2); c.fill();
-    // body
-    c.fillStyle = '#2d4a6b';
-    c.beginPath();
-    c.moveTo(cx - s * 0.18, cy + s * 0.3);
-    c.lineTo(cx, cy - s * 0.08);
-    c.lineTo(cx + s * 0.18, cy + s * 0.3);
-    c.closePath(); c.fill();
-    // head
-    c.fillStyle = '#e2b98a';
-    c.beginPath(); c.arc(cx, cy - s * 0.15, s * 0.12, 0, Math.PI * 2); c.fill();
-    // lantern flame
-    c.fillStyle = '#ffd27a';
-    c.beginPath(); c.arc(cx + s * 0.22, cy + Math.sin(t * 14) * s * 0.01, s * 0.06, 0, Math.PI * 2); c.fill();
+    c.beginPath(); c.arc(fx, fy, cs * 0.6, 0, TWO_PI); c.fill();
+    c.drawImage(spr, x0, top, w, h);
+    var flick = 1 + Math.sin(t * 17) * 0.12 + Math.sin(t * 6.3) * 0.08;
+    c.fillStyle = 'rgba(255,190,90,0.9)';
+    c.beginPath(); c.ellipse(fx, fy, h * 0.011 * flick, h * 0.022 * flick, 0, 0, TWO_PI); c.fill();
+    c.fillStyle = 'rgba(255,248,215,0.95)';
+    c.beginPath(); c.ellipse(fx, fy + h * 0.004, h * 0.005, h * 0.011 * flick, 0, 0, TWO_PI); c.fill();
   }
 
   function render(t) {
@@ -946,8 +1147,8 @@
       ctx.fillRect(pt.x * cs - 1.5, pt.y * cs - 1.5, 3, 3);
     }
 
-    drawGhost(ctx, gcx, gcy, cs * 1.1, t, g.awake ? 0.95 : 0.4, false);
-    drawPlayer(ctx, pcx, pcy, cs, t);
+    var ghostBox = drawGhostSprite(ctx, gcx, gcy, cs, t, g.awake ? 0.95 : 0.45);
+    drawPlayerSprite(ctx, pcx, pcy, cs, t);
 
     // Darkness with a flickering lantern hole
     var f = fogLayer.getContext('2d');
@@ -964,7 +1165,7 @@
     hole.addColorStop(0.7, 'rgba(0,0,0,0.65)');
     hole.addColorStop(1, 'rgba(0,0,0,0)');
     f.fillStyle = hole;
-    f.beginPath(); f.arc(pcx, pcy, rad, 0, Math.PI * 2); f.fill();
+    f.beginPath(); f.arc(pcx, pcy, rad, 0, TWO_PI); f.fill();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.drawImage(fogLayer, 0, 0);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -976,22 +1177,15 @@
     eg.addColorStop(0, 'rgba(140,230,140,' + pulse + ')');
     eg.addColorStop(1, 'rgba(140,230,140,0)');
     ctx.fillStyle = eg;
-    ctx.beginPath(); ctx.arc(ex, ey, cs * 1.2, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(ex, ey, cs * 1.2, 0, TWO_PI); ctx.fill();
 
     // Her red eyes are visible even in the dark once she is awake
-    if (g.awake) {
-      ctx.save();
-      ctx.translate(gcx, gcy + Math.sin(t * 3) * cs * 0.044);
-      drawEyes(ctx, 0, 0, cs * 1.1, t);
-      ctx.restore();
-    }
+    if (g.awake) { drawGhostEyes(ctx, ghostBox, t); }
   }
 
   function drawScare() {
     var sc = $('scare-canvas');
-    var c = sc.getContext('2d');
-    c.clearRect(0, 0, sc.width, sc.height);
-    drawGhost(c, sc.width / 2, sc.height * 0.62, sc.width * 1.6, state.clock, 1, true);
+    window.BBChars.drawGhostPortrait(sc.getContext('2d'), sc.width, sc.height, true);
   }
 
   // ================================================================== LOOP
