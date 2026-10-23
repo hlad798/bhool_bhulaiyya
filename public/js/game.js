@@ -55,7 +55,8 @@
     dpr: 1,
     deadEnds: {},
     player: { r: 0, c: 0, x: 0, y: 0 },
-    ghost: { r: 0, c: 0, x: 0, y: 0, awake: false, wakeIn: 0, moveAcc: 0 },
+    ghosts: [],
+    catcher: 'manjulika',
     running: false,
     paused: false,
     time: 0,
@@ -322,6 +323,17 @@
       var t = this.ctx.currentTime + 0.01;
       this.playBuffer(this.heartLub, vol, { when: t });
       this.playBuffer(this.heartDub, vol, { when: t + gap });
+    },
+
+    // her anklet bells, from her side of the screen
+    ghungroo: function (vol, pan) {
+      if (!this.ctx || !this.bells.length) { return; }
+      var buf = this.bells[Math.floor(Math.random() * this.bells.length)];
+      this.playBuffer(buf, vol, {
+        rate: 0.9 + Math.random() * 0.14,
+        pan: typeof pan === 'number' ? pan : 0,
+        wet: 0.8
+      });
     },
 
     // HER heartbeat: a second, deeper and heavier lub-dub that comes from
@@ -940,9 +952,22 @@
     whisperTimer = setTimeout(function () { el.classList.remove('show'); }, 3600);
   }
 
-  function ghostPan() {
+  function ghostPan(g) {
     var span = Math.max(1, state.cols / 2);
-    return (state.ghost.x - state.player.x) / span;
+    return (g.x - state.player.x) / span;
+  }
+
+  function makeGhost(kind, name, r, c, speed, wake) {
+    return { kind: kind, name: name, r: r, c: c, x: c, y: r, awake: false, wakeIn: wake, moveAcc: 0, speed: speed, dist: 99 };
+  }
+
+  function nearestGhost() {
+    var best = null;
+    for (var i = 0; i < state.ghosts.length; i++) {
+      var g = state.ghosts[i];
+      if (g.awake && (!best || g.dist < best.dist)) { best = g; }
+    }
+    return best;
   }
 
   // ================================================================== LEVELS
@@ -988,11 +1013,10 @@
     }
     var p = state.player;
     p.r = data.start[0]; p.c = data.start[1]; p.x = p.c; p.y = p.r;
-    var g = state.ghost;
-    g.r = data.start[0]; g.c = data.start[1]; g.x = g.c; g.y = g.r;
-    g.awake = false;
-    g.wakeIn = data.config.wake_delay;
-    g.moveAcc = 0;
+    state.ghosts = [makeGhost('manjulika', 'Manjulika', data.start[0], data.start[1], data.config.ghost_speed, data.config.wake_delay)];
+    if (data.spawn2) {
+      state.ghosts.push(makeGhost('anjulika', 'Anjulika', data.spawn2[0], data.spawn2[1], data.config.ghost2_speed, data.config.ghost2_wake_delay));
+    }
     state.time = 0;
     state.correct = 0;
     state.heldDir = null;
@@ -1017,7 +1041,8 @@
       'This floor is <b>' + data.config.layout + '</b>.<br>' +
       'Manjulika wakes in <b>' + data.config.wake_delay + ' seconds</b> and moves at <b>' +
       data.config.ghost_speed + ' steps per second</b>.<br>You have only <b>' +
-      data.config.question_time + ' seconds</b> to answer each riddle. Find the glowing door.',
+      data.config.question_time + ' seconds</b> to answer each riddle. Find the glowing door.' +
+      (data.spawn2 ? '<br><br><span style="color:#5dff9a">Her sister <b>Anjulika</b> also hunts these halls - she is coming from the other side.</span>' : ''),
       [{ label: 'Begin', primary: true, onClick: function () {
         Sound.resume();
         state.running = true;
@@ -1058,17 +1083,22 @@
     });
   }
 
-  function caught(reason) {
+  function caught(reason, who) {
+    state.catcher = who || 'manjulika';
     if (!state.running && !state.question) { return; }
     state.running = false;
     state.paused = false;
     state.heldDir = null;
     $('modal-question').classList.remove('show');
     $('board-wrap').classList.remove('shake');
-    Sound.boom(1.0);
-    startScare();
+    startScare(state.catcher);
+    redAlarm(true);
+    // a short, low, echoing horror scream as she lunges, and a heavy hit on impact
+    setTimeout(function () { Sound.scream(0.65, 1.3, { wet: 1.3, pitch: 0.74 }); }, 250);
+    setTimeout(function () { Sound.boom(0.9); }, 480);
     setTimeout(function () {
       stopScare();
+      redAlarm(false);
       api('/api/rank', { total: state.total, cleared: state.level - 1 }).then(function (res) {
         showCaught(reason, res.title);
       }).catch(function () { showCaught(reason, ''); });
@@ -1076,7 +1106,7 @@
   }
 
   function showCaught(reason, title) {
-    showMessage('Manjulika caught you!', reason +
+    showMessage((state.catcher === 'anjulika' ? 'Anjulika' : 'Manjulika') + ' caught you!', reason +
       '<br><br>Score so far: <b>' + state.total + '</b>' + (title ? '<br>Rank: <b>' + title + '</b>' : ''),
       [{ label: 'Retry level ' + state.level, primary: true, onClick: function () {
           state.total = state.levelStartTotal;
@@ -1113,7 +1143,7 @@
       })(q.options[i]);
     }
     $('modal-question').classList.add('show');
-    Sound.herBeat(0.45, ghostPan());
+    if (state.ghosts.length) { Sound.herBeat(0.45, ghostPan(state.ghosts[0])); Sound.ghungroo(0.3, ghostPan(state.ghosts[0])); }
   }
 
   function setOptionsDisabled(flag) {
@@ -1196,10 +1226,12 @@
 
   function afterPlayerMove() {
     var p = state.player;
-    var g = state.ghost;
-    if (g.awake && p.r === g.r && p.c === g.c) {
-      caught('You ran straight into her arms.');
-      return;
+    for (var gi = 0; gi < state.ghosts.length; gi++) {
+      var g = state.ghosts[gi];
+      if (g.awake && p.r === g.r && p.c === g.c) {
+        caught('You ran straight into ' + g.name + '\'s arms.', g.kind);
+        return;
+      }
     }
     if (p.r === state.data.exit[0] && p.c === state.data.exit[1]) {
       levelComplete();
@@ -1234,8 +1266,7 @@
     return dist;
   }
 
-  function stepGhost() {
-    var g = state.ghost;
+  function stepGhost(g) {
     var cols = state.cols;
     var map = state.distMap;
     var best = null;
@@ -1249,25 +1280,30 @@
     }
     if (best) { g.r = best[0]; g.c = best[1]; }
     if (g.r === state.player.r && g.c === state.player.c) {
-      caught('Her cold hands closed around you in the dark.');
+      caught(g.name + '\'s cold hands closed around you in the dark.', g.kind);
       return;
     }
-    state.distMap = bfsFromPlayer();
-    state.dist = state.distMap[g.r * cols + g.c];
-    // Her heartbeat pounds with every step - louder as she gets closer.
-    if (state.dist <= 18) {
-      Sound.herBeat(0.05 + Math.pow((18 - state.dist) / 18, 1.6) * 1.1, ghostPan());
+    g.dist = state.distMap[g.r * cols + g.c];
+    // Her heartbeat pounds and her ghungroo rings with every step -
+    // louder and louder as she gets closer.
+    if (g.dist <= 18) {
+      var near = Math.pow((18 - g.dist) / 18, 1.6);
+      Sound.herBeat(0.05 + near * 1.1, ghostPan(g));
+      Sound.ghungroo(0.03 + near * 0.6, ghostPan(g));
     }
   }
 
   // ================================================================== UPDATE
   function update(dt) {
-    var p = state.player, g = state.ghost;
+    var p = state.player, gi, g;
     var lerp = Math.min(1, dt * 16);
     p.x += (p.c - p.x) * lerp;
     p.y += (p.r - p.y) * lerp;
-    g.x += (g.c - g.x) * Math.min(1, dt * 10);
-    g.y += (g.r - g.y) * Math.min(1, dt * 10);
+    for (gi = 0; gi < state.ghosts.length; gi++) {
+      g = state.ghosts[gi];
+      g.x += (g.c - g.x) * Math.min(1, dt * 10);
+      g.y += (g.r - g.y) * Math.min(1, dt * 10);
+    }
 
     for (var i = state.particles.length - 1; i >= 0; i--) {
       var pt = state.particles[i];
@@ -1311,34 +1347,48 @@
     }
 
     state.distMap = bfsFromPlayer();
-    state.dist = state.distMap[g.r * state.cols + g.c];
 
-    // Manjulika
-    if (!g.awake) {
-      g.wakeIn -= dt;
-      $('hud-ghost').textContent = 'Wakes in ' + Math.max(0, g.wakeIn).toFixed(1) + 's';
+    // Manjulika (and, deeper in, her sister Anjulika)
+    var anyAwake = false, wakeSoonest = 99;
+    for (gi = 0; gi < state.ghosts.length; gi++) {
+      g = state.ghosts[gi];
+      g.dist = state.distMap[g.r * state.cols + g.c];
+      if (!g.awake) {
+        g.wakeIn -= dt;
+        wakeSoonest = Math.min(wakeSoonest, g.wakeIn);
+        if (g.wakeIn <= 0) {
+          g.awake = true;
+          Sound.boom(0.45);
+          redFlash();
+          whisper(g.kind === 'anjulika' ? pick(state.data.whispers.sister) : pick(state.data.whispers.awake));
+          state.whisperAcc = 0;
+        }
+      } else {
+        anyAwake = true;
+        g.moveAcc += dt;
+        var interval = 1 / g.speed;
+        while (g.moveAcc >= interval && state.running) {
+          g.moveAcc -= interval;
+          stepGhost(g);
+        }
+        if (!state.running) { return; }
+      }
+    }
+    var hunter = nearestGhost();
+    state.dist = hunter ? hunter.dist : 99;
+    if (!anyAwake) {
+      $('hud-ghost').textContent = 'Wakes in ' + Math.max(0, wakeSoonest).toFixed(1) + 's';
       $('hud-ghost').classList.remove('awake');
-      if (g.wakeIn <= 0) {
-        g.awake = true;
-        Sound.boom(0.45);
-        whisper(pick(state.data.whispers.awake));
-        state.whisperAcc = 0;
-      }
     } else {
-      g.moveAcc += dt;
-      var interval = 1 / state.cfg.ghost_speed;
-      while (g.moveAcc >= interval && state.running) {
-        g.moveAcc -= interval;
-        stepGhost();
-      }
-      if (!state.running) { return; }
-      $('hud-ghost').textContent = state.dist <= 4 ? 'RIGHT BEHIND YOU' : 'AWAKE - hunting';
+      var both = state.ghosts.length > 1 && state.ghosts[1].awake && state.ghosts[0].awake;
+      $('hud-ghost').textContent = state.dist <= 4 ? (hunter.name.toUpperCase() + ' IS RIGHT BEHIND YOU') : (both ? 'BOTH SISTERS HUNTING' : 'AWAKE - hunting');
       $('hud-ghost').classList.add('awake');
     }
+    g = hunter || state.ghosts[0];
 
     // Heartbeat: faster and louder as she closes in (about 60 -> 180 bpm)
-    var d = g.awake ? Math.max(1, state.dist) : 30;
-    var closeness = g.awake ? Math.max(0, Math.min(1, (20 - d) / 19)) : 0;
+    var d = hunter ? Math.max(1, state.dist) : 30;
+    var closeness = hunter ? Math.max(0, Math.min(1, (20 - d) / 19)) : 0;
     var bpm = 58 + closeness * 132;
     state.heartAcc += dt;
     if (state.heartAcc >= 60 / bpm) {
@@ -1348,19 +1398,28 @@
     Sound.setTension(closeness);
 
     // Shriek when she is too near
-    if (g.awake && state.dist <= 2 && state.nearArmed) {
+    if (hunter && state.dist <= 2 && state.nearArmed) {
       state.nearArmed = false;
       Sound.scream(0.55, 1.6, { wet: 0.9 });
       whisper(pick(state.data.whispers.near));
     }
     if (state.dist >= 5) { state.nearArmed = true; }
-    $('board-wrap').classList.toggle('shake', g.awake && state.dist <= 3);
+    $('board-wrap').classList.toggle('shake', !!hunter && state.dist <= 3);
+
+    // a red flash now and then, and more often when she is close
+    state.redAcc = (state.redAcc || 0) + dt;
+    if (!state.nextRed) { state.nextRed = 10 + Math.random() * 12; }
+    if (state.redAcc >= state.nextRed) {
+      state.redAcc = 0;
+      state.nextRed = (hunter && state.dist <= 6 ? 4 : 12) + Math.random() * 12;
+      redFlash();
+    }
 
     // Random whispers
     state.whisperAcc += dt;
     if (state.whisperAcc > 10) {
       state.whisperAcc = Math.random() * 3;
-      whisper(pick(g.awake ? state.data.whispers.awake : state.data.whispers.sleeping));
+      whisper(pick(hunter ? state.data.whispers.awake : state.data.whispers.sleeping));
     }
 
     $('hud-time').textContent = state.time.toFixed(1);
@@ -1435,7 +1494,7 @@
   // Decide once per level where the bones, cobwebs and floating lights go.
   function makeDecor(data) {
     var R = seededRandom(data.seed);
-    var decor = { bones: [], webs: [], orbs: [] };
+    var decor = { bones: [], webs: [], orbs: [], skulls: [], blood: [], candles: [], skeletons: [], corpses: [] };
     var openCount = 0;
     for (var r = 0; r < state.rows; r++) {
       for (var c = 0; c < state.cols; c++) {
@@ -1446,8 +1505,24 @@
         for (var di = 0; di < data.deadEnds.length; di++) {
           if (data.deadEnds[di].r === r && data.deadEnds[di].c === c) { isDead = true; }
         }
-        if (!isDead && R() < 0.09) {
-          decor.bones.push({ x: c + 0.2 + R() * 0.6, y: r + 0.2 + R() * 0.6, a: R() * Math.PI, s: 0.32 + R() * 0.12 });
+        var isEnd = (r === data.start[0] && c === data.start[1]) || (r === data.exit[0] && c === data.exit[1]);
+        if (!isDead && !isEnd) {
+          // corridors running left-right get props lying left-right, and vice versa
+          var flat = !(cell & E) || !(cell & W) ? 0 : Math.PI / 2;
+          var roll = R();
+          if (roll < 0.07) {
+            decor.bones.push({ x: c + 0.2 + R() * 0.6, y: r + 0.2 + R() * 0.6, a: R() * Math.PI, s: 0.32 + R() * 0.12 });
+          } else if (roll < 0.12) {
+            decor.skulls.push({ x: c + 0.3 + R() * 0.4, y: r + 0.3 + R() * 0.4, a: (R() - 0.5) * 0.8, s: 0.3 + R() * 0.08 });
+          } else if (roll < 0.16) {
+            decor.blood.push({ x: c + 0.5, y: r + 0.5, r: 0.22 + R() * 0.12, seed: Math.floor(R() * 1e6) });
+          } else if (roll < 0.185) {
+            decor.candles.push({ x: c + 0.25 + R() * 0.5, y: r + 0.25 + R() * 0.5, n: 2 + Math.floor(R() * 2), phase: R() * 10 });
+          } else if (roll < 0.205) {
+            decor.skeletons.push({ x: c + 0.5, y: r + 0.5, a: flat + (R() < 0.5 ? 0 : Math.PI), s: 0.8 });
+          } else if (roll < 0.22) {
+            decor.corpses.push({ x: c + 0.5, y: r + 0.5, a: flat + (R() < 0.5 ? 0 : Math.PI), s: 0.82, seed: Math.floor(R() * 1e6) });
+          }
         }
         if ((cell & N) && (cell & W) && R() < 0.3) { decor.webs.push([r, c, 0]); }
         else if ((cell & N) && (cell & E) && R() < 0.2) { decor.webs.push([r, c, 1]); }
@@ -1692,6 +1767,184 @@
     c.restore();
   }
 
+  // ---- the dead of the haveli: skulls, skeletons, shrouded corpses, blood, candles
+  var PROP_INK = 'rgba(15,6,6,0.9)';
+
+  function paintSkull(c, k, cs) {
+    var s = k.s * cs;
+    c.save();
+    c.translate(k.x * cs, k.y * cs);
+    c.rotate(k.a);
+    c.fillStyle = 'rgba(0,0,0,0.45)';
+    c.beginPath(); c.ellipse(s * 0.08, s * 0.12, s * 0.5, s * 0.42, 0, 0, TWO_PI); c.fill();
+    var g = c.createRadialGradient(-s * 0.12, -s * 0.18, s * 0.05, 0, 0, s * 0.55);
+    g.addColorStop(0, '#efe6d2');
+    g.addColorStop(1, '#a89b84');
+    c.fillStyle = g;
+    c.beginPath();
+    c.arc(0, -s * 0.05, s * 0.42, Math.PI * 0.85, Math.PI * 2.15);
+    c.lineTo(s * 0.26, s * 0.3);
+    c.lineTo(-s * 0.26, s * 0.3);
+    c.closePath();
+    c.fill();
+    c.strokeStyle = PROP_INK; c.lineWidth = Math.max(0.6, s * 0.05); c.stroke();
+    c.fillStyle = '#120606';
+    c.beginPath(); c.ellipse(-s * 0.16, -s * 0.02, s * 0.12, s * 0.14, 0.2, 0, TWO_PI); c.fill();
+    c.beginPath(); c.ellipse(s * 0.16, -s * 0.02, s * 0.12, s * 0.14, -0.2, 0, TWO_PI); c.fill();
+    c.beginPath(); c.moveTo(0, s * 0.1); c.lineTo(-s * 0.05, s * 0.2); c.lineTo(s * 0.05, s * 0.2); c.closePath(); c.fill();
+    c.strokeStyle = 'rgba(20,8,8,0.8)'; c.lineWidth = Math.max(0.5, s * 0.03);
+    for (var t = -2; t <= 2; t++) { c.beginPath(); c.moveTo(t * s * 0.08, s * 0.24); c.lineTo(t * s * 0.08, s * 0.32); c.stroke(); }
+    c.restore();
+  }
+
+  function paintSkeleton(c, k, cs) {
+    var s = k.s * cs;
+    c.save();
+    c.translate(k.x * cs, k.y * cs);
+    c.rotate(k.a);
+    c.lineCap = 'round';
+    c.strokeStyle = 'rgba(0,0,0,0.4)';
+    c.lineWidth = s * 0.14;
+    c.beginPath(); c.moveTo(-s * 0.4, s * 0.04); c.lineTo(s * 0.45, s * 0.04); c.stroke();
+    var bone = '#d8cfbc';
+    function b(x1, y1, x2, y2, w) {
+      c.strokeStyle = PROP_INK; c.lineWidth = w + Math.max(0.8, s * 0.02);
+      c.beginPath(); c.moveTo(x1 * s, y1 * s); c.lineTo(x2 * s, y2 * s); c.stroke();
+      c.strokeStyle = bone; c.lineWidth = w;
+      c.beginPath(); c.moveTo(x1 * s, y1 * s); c.lineTo(x2 * s, y2 * s); c.stroke();
+    }
+    var w = Math.max(1, s * 0.045);
+    b(-0.25, 0, 0.18, 0, w * 1.2);                    // spine
+    for (var r = 0; r < 4; r++) {                     // ribs
+      var rx = -0.18 + r * 0.07;
+      c.strokeStyle = bone; c.lineWidth = w * 0.8;
+      c.beginPath(); c.moveTo(rx * s, 0); c.quadraticCurveTo((rx + 0.03) * s, -0.16 * s, (rx + 0.08) * s, -0.13 * s); c.stroke();
+      c.beginPath(); c.moveTo(rx * s, 0); c.quadraticCurveTo((rx + 0.03) * s, 0.16 * s, (rx + 0.08) * s, 0.13 * s); c.stroke();
+    }
+    b(-0.2, -0.05, -0.02, -0.2, w); b(-0.02, -0.2, 0.14, -0.32, w);   // arms flung out
+    b(-0.2, 0.05, -0.05, 0.22, w); b(-0.05, 0.22, 0.05, 0.28, w);
+    c.fillStyle = bone;                                               // pelvis
+    c.beginPath(); c.ellipse(0.2 * s, 0, 0.06 * s, 0.1 * s, 0, 0, TWO_PI); c.fill();
+    c.strokeStyle = PROP_INK; c.lineWidth = Math.max(0.6, s * 0.02); c.stroke();
+    b(0.24, -0.05, 0.4, -0.1, w); b(0.4, -0.1, 0.5, -0.06, w);        // legs
+    b(0.24, 0.05, 0.38, 0.12, w); b(0.38, 0.12, 0.5, 0.1, w);
+    c.restore();
+    paintSkull(c, { x: k.x + Math.cos(k.a) * -0.32 * k.s, y: k.y + Math.sin(k.a) * -0.32 * k.s, a: k.a - Math.PI / 2, s: k.s * 0.32 }, cs);
+  }
+
+  function paintCorpse(c, k, cs) {
+    var s = k.s * cs;
+    var R = seededRandom(k.seed);
+    c.save();
+    c.translate(k.x * cs, k.y * cs);
+    c.rotate(k.a);
+    c.fillStyle = 'rgba(0,0,0,0.5)';
+    c.beginPath(); c.ellipse(s * 0.04, s * 0.06, s * 0.48, s * 0.2, 0, 0, TWO_PI); c.fill();
+    // grey feet poking out of the shroud
+    c.fillStyle = '#8f9690';
+    c.beginPath(); c.ellipse(s * 0.45, -s * 0.06, s * 0.05, s * 0.035, 0.3, 0, TWO_PI); c.fill();
+    c.beginPath(); c.ellipse(s * 0.45, s * 0.06, s * 0.05, s * 0.035, -0.3, 0, TWO_PI); c.fill();
+    // the white shroud, tied at the head and feet
+    var g = c.createLinearGradient(0, -s * 0.18, 0, s * 0.18);
+    g.addColorStop(0, '#e6e0d3');
+    g.addColorStop(1, '#9d968a');
+    c.fillStyle = g;
+    c.beginPath();
+    c.moveTo(-s * 0.46, 0);
+    c.quadraticCurveTo(-s * 0.46, -s * 0.15, -s * 0.3, -s * 0.15);
+    c.quadraticCurveTo(-s * 0.15, -s * 0.11, 0, -s * 0.17);
+    c.quadraticCurveTo(s * 0.25, -s * 0.15, s * 0.42, -s * 0.08);
+    c.lineTo(s * 0.42, s * 0.08);
+    c.quadraticCurveTo(s * 0.25, s * 0.15, 0, s * 0.17);
+    c.quadraticCurveTo(-s * 0.15, s * 0.11, -s * 0.3, s * 0.15);
+    c.quadraticCurveTo(-s * 0.46, s * 0.15, -s * 0.46, 0);
+    c.closePath();
+    c.fill();
+    c.strokeStyle = PROP_INK; c.lineWidth = Math.max(0.6, s * 0.02); c.stroke();
+    c.strokeStyle = 'rgba(80,70,60,0.5)'; c.lineWidth = Math.max(0.5, s * 0.012);
+    for (var f = 0; f < 4; f++) {
+      var fx = -s * 0.15 + f * s * 0.13;
+      c.beginPath(); c.moveTo(fx, -s * 0.15); c.quadraticCurveTo(fx + s * 0.03, 0, fx, s * 0.15); c.stroke();
+    }
+    c.strokeStyle = '#6b5a44'; c.lineWidth = Math.max(0.8, s * 0.025);
+    c.beginPath(); c.moveTo(-s * 0.32, -s * 0.15); c.lineTo(-s * 0.32, s * 0.15); c.stroke();
+    c.beginPath(); c.moveTo(s * 0.36, -s * 0.1); c.lineTo(s * 0.36, s * 0.1); c.stroke();
+    // blood seeping through the cloth
+    c.fillStyle = 'rgba(120,0,15,0.75)';
+    c.beginPath();
+    var bx = s * (0.0 + R() * 0.1), by = s * (R() - 0.5) * 0.08;
+    for (var p = 0; p < 9; p++) {
+      var a = p / 9 * TWO_PI, rr = s * (0.05 + R() * 0.05);
+      if (p === 0) { c.moveTo(bx + Math.cos(a) * rr, by + Math.sin(a) * rr); } else { c.lineTo(bx + Math.cos(a) * rr, by + Math.sin(a) * rr); }
+    }
+    c.closePath(); c.fill();
+    c.restore();
+  }
+
+  function paintBloodPool(c, k, cs) {
+    var R = seededRandom(k.seed);
+    var x = k.x * cs, y = k.y * cs, r = k.r * cs;
+    c.fillStyle = 'rgba(80,0,10,0.85)';
+    c.beginPath();
+    for (var p = 0; p < 14; p++) {
+      var a = p / 14 * TWO_PI, rr = r * (0.65 + R() * 0.45);
+      if (p === 0) { c.moveTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr * 0.75); }
+      else { c.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr * 0.75); }
+    }
+    c.closePath();
+    c.fill();
+    c.fillStyle = 'rgba(160,20,30,0.35)';
+    c.beginPath(); c.ellipse(x - r * 0.2, y - r * 0.15, r * 0.35, r * 0.15, -0.3, 0, TWO_PI); c.fill();
+    c.fillStyle = 'rgba(80,0,10,0.8)';
+    for (var d = 0; d < 6; d++) {
+      var da = R() * TWO_PI, dd = r * (1.1 + R() * 0.6);
+      c.beginPath(); c.arc(x + Math.cos(da) * dd, y + Math.sin(da) * dd * 0.75, r * (0.04 + R() * 0.07), 0, TWO_PI); c.fill();
+    }
+  }
+
+  function paintCandles(c, k, cs) {
+    var R = seededRandom(Math.floor(k.phase * 1000));
+    for (var i = 0; i < k.n; i++) {
+      var x = (k.x + (i - (k.n - 1) / 2) * 0.13) * cs, y = (k.y + (i % 2) * 0.06) * cs;
+      var h = cs * (0.14 + R() * 0.1), w = cs * 0.06;
+      c.fillStyle = 'rgba(0,0,0,0.4)';
+      c.beginPath(); c.ellipse(x + w * 0.4, y + w * 0.3, w * 0.8, w * 0.35, 0, 0, TWO_PI); c.fill();
+      c.fillStyle = '#d9cfae';
+      c.fillRect(x - w / 2, y - h, w, h);
+      c.fillStyle = '#efe6c8';
+      c.fillRect(x - w / 2, y - h, w * 0.35, h);
+      c.beginPath(); c.ellipse(x, y - h, w / 2, w * 0.2, 0, 0, TWO_PI); c.fill();
+      c.fillStyle = '#e8ddb8';
+      c.beginPath(); c.ellipse(x + w * 0.3, y - h * 0.6, w * 0.12, h * 0.2, 0, 0, TWO_PI); c.fill();
+      c.strokeStyle = PROP_INK; c.lineWidth = Math.max(0.5, w * 0.12);
+      c.strokeRect(x - w / 2, y - h, w, h);
+    }
+  }
+
+  // candle flames flicker live and glow through the darkness
+  function drawCandleFlames(c, cs, t) {
+    var list = state.decor.candles;
+    for (var k = 0; k < list.length; k++) {
+      var cd = list[k];
+      var R = seededRandom(Math.floor(cd.phase * 1000));
+      var glow = c.createRadialGradient(cd.x * cs, (cd.y - 0.2) * cs, 0, cd.x * cs, (cd.y - 0.2) * cs, cs * 0.7);
+      glow.addColorStop(0, 'rgba(255,170,70,' + (0.22 + 0.05 * Math.sin(t * 9 + cd.phase)) + ')');
+      glow.addColorStop(1, 'rgba(255,170,70,0)');
+      c.fillStyle = glow;
+      c.beginPath(); c.arc(cd.x * cs, (cd.y - 0.2) * cs, cs * 0.7, 0, TWO_PI); c.fill();
+      for (var i = 0; i < cd.n; i++) {
+        var x = (cd.x + (i - (cd.n - 1) / 2) * 0.13) * cs, y = (cd.y + (i % 2) * 0.06) * cs;
+        var h = cs * (0.14 + R() * 0.1);
+        var fl = 1 + 0.18 * Math.sin(t * 13 + cd.phase + i * 2);
+        var fx = x + Math.sin(t * 5 + i) * cs * 0.008;
+        c.fillStyle = 'rgba(255,150,40,0.95)';
+        c.beginPath(); c.ellipse(fx, y - h - cs * 0.035 * fl, cs * 0.022, cs * 0.045 * fl, 0, 0, TWO_PI); c.fill();
+        c.fillStyle = 'rgba(255,245,200,0.95)';
+        c.beginPath(); c.ellipse(fx, y - h - cs * 0.025, cs * 0.01, cs * 0.022 * fl, 0, 0, TWO_PI); c.fill();
+      }
+    }
+  }
+
   function buildStatic() {
     var c = staticLayer.getContext('2d');
     var cs = state.cell;
@@ -1708,7 +1961,12 @@
         paintSigil(c, (state.deadEnds[dk].c + 0.5) * cs, (state.deadEnds[dk].r + 0.5) * cs, cs);
       }
     }
+    for (k = 0; k < state.decor.blood.length; k++) { paintBloodPool(c, state.decor.blood[k], cs); }
     for (k = 0; k < state.decor.bones.length; k++) { paintBone(c, state.decor.bones[k], cs); }
+    for (k = 0; k < state.decor.corpses.length; k++) { paintCorpse(c, state.decor.corpses[k], cs); }
+    for (k = 0; k < state.decor.skeletons.length; k++) { paintSkeleton(c, state.decor.skeletons[k], cs); }
+    for (k = 0; k < state.decor.skulls.length; k++) { paintSkull(c, state.decor.skulls[k], cs); }
+    for (k = 0; k < state.decor.candles.length; k++) { paintCandles(c, state.decor.candles[k], cs); }
     for (k = 0; k < state.decor.webs.length; k++) {
       var wb = state.decor.webs[k];
       paintCobweb(c, (wb[1] + wb[2]) * cs + (wb[2] ? -t * 0.6 : t * 0.6), wb[0] * cs + t * 0.6, cs, wb[2] === 1);
@@ -1770,8 +2028,8 @@
   // Here we only place them, add the live glows and animate the lantern flame.
   var FIGURE_H = 1.45;   // figure height in cells
 
-  function drawGhostSprite(c, cx, cy, cs, t, alpha) {
-    var spr = window.BBChars.ghostFrame(t);
+  function drawGhostSprite(c, cx, cy, cs, t, alpha, kind) {
+    var spr = window.BBChars.ghostFrame(t + (kind === 'anjulika' ? 0.37 : 0), kind);
     var h = cs * FIGURE_H, w = h * spr.width / spr.height;
     var bob = Math.sin(t * 3) * cs * 0.04;
     var top = cy - h * 0.6 + bob;
@@ -1784,16 +2042,17 @@
     c.beginPath(); c.arc(cx, cy - h * 0.15, h * 0.6, 0, TWO_PI); c.fill();
     c.drawImage(spr, cx - w / 2, top, w, h);
     c.restore();
-    return { left: top, w: w, h: h, x0: cx - w / 2 };
+    return { left: top, w: w, h: h, x0: cx - w / 2, kind: kind };
   }
 
   function drawGhostEyes(c, box, t) {
     var glow = 0.75 + Math.sin(t * 9) * 0.25;
-    var eyes = window.BBChars.ghostEyes;
+    var eyes = window.BBChars.ghostEyes(box.kind);
+    var gc = window.BBChars.glow(box.kind);
     c.save();
-    c.shadowColor = '#ff1a2e';
+    c.shadowColor = 'rgb(' + gc.join(',') + ')';
     c.shadowBlur = box.h * 0.06;
-    c.fillStyle = 'rgba(255,40,60,' + glow + ')';
+    c.fillStyle = 'rgba(' + gc.join(',') + ',' + glow + ')';
     for (var i = 0; i < eyes.length; i++) {
       c.beginPath();
       c.arc(box.x0 + eyes[i][0] * box.w, box.left + eyes[i][1] * box.h, Math.max(1.2, box.h * 0.008), 0, TWO_PI);
@@ -1833,9 +2092,8 @@
     var mo = state.margin * dpr;
     ctx.setTransform(dpr, 0, 0, dpr, mo, mo);
 
-    var p = state.player, g = state.ghost;
+    var p = state.player, gi;
     var pcx = (p.x + 0.5) * cs, pcy = (p.y + 0.5) * cs;
-    var gcx = (g.x + 0.5) * cs, gcy = (g.y + 0.5) * cs;
 
     // dust from crumbling walls
     for (var i = 0; i < state.particles.length; i++) {
@@ -1844,7 +2102,11 @@
       ctx.fillRect(pt.x * cs - 1.5, pt.y * cs - 1.5, 3, 3);
     }
 
-    var ghostBox = drawGhostSprite(ctx, gcx, gcy, cs, t, g.awake ? 0.95 : 0.45);
+    var boxes = [];
+    for (gi = 0; gi < state.ghosts.length; gi++) {
+      var gh = state.ghosts[gi];
+      boxes.push(drawGhostSprite(ctx, (gh.x + 0.5) * cs, (gh.y + 0.5) * cs, cs, t, gh.awake ? 0.95 : 0.45, gh.kind));
+    }
     drawPlayerSprite(ctx, pcx, pcy, cs, t);
 
     // Darkness with a flickering lantern hole
@@ -1855,7 +2117,7 @@
     f.fillStyle = 'rgba(3,1,1,0.96)';
     f.fillRect(-state.margin, -state.margin, state.pw, state.ph);
     f.globalCompositeOperation = 'destination-out';
-    var nearFlicker = (g.awake && state.dist <= 4) ? 0.12 : 0.04;
+    var nearFlicker = (nearestGhost() && state.dist <= 4) ? 0.12 : 0.04;
     var rad = state.cfg.light_radius * cs * (1 + nearFlicker * Math.sin(t * 13) + 0.03 * Math.sin(t * 7.3));
     var hole = f.createRadialGradient(pcx, pcy, rad * 0.2, pcx, pcy, rad);
     hole.addColorStop(0, 'rgba(0,0,0,1)');
@@ -1874,8 +2136,9 @@
     ctx.fillStyle = warm;
     ctx.beginPath(); ctx.arc(pcx, pcy, rad, 0, TWO_PI); ctx.fill();
 
-    // floating lights drifting through the dark
+    // floating lights drifting through the dark, and candles burning in the corridors
     drawOrbs(ctx, cs, t);
+    drawCandleFlames(ctx, cs, t);
 
     // light spilling from the exit
     var ep = exitPoint(cs);
@@ -1887,7 +2150,9 @@
     ctx.beginPath(); ctx.arc(ep.x, ep.y, cs * 1.3, 0, TWO_PI); ctx.fill();
 
     // Her red eyes are visible even in the dark once she is awake
-    if (g.awake) { drawGhostEyes(ctx, ghostBox, t); }
+    for (gi = 0; gi < state.ghosts.length; gi++) {
+      if (state.ghosts[gi].awake) { drawGhostEyes(ctx, boxes[gi], t); }
+    }
 
     // blood-red vignette and film grain over everything
     ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -1904,23 +2169,42 @@
   // ---------------------------------------------------------------- jumpscare
   // She appears far away in the dark, flickering... then rushes at you until
   // her face fills - and overflows - the whole screen, shaking.
-  var scare = { img: null, start: 0, running: false };
+  var scare = { img: null, imgs: {}, start: 0, running: false };
 
-  function startScare() {
+  function startScare(kind) {
     var sc = $('scare-canvas');
     var dpr = window.devicePixelRatio || 1;
     sc.width = Math.round(window.innerWidth * dpr);
     sc.height = Math.round(window.innerHeight * dpr);
-    if (!scare.img) {
-      scare.img = document.createElement('canvas');
-      scare.img.width = 1600;
-      scare.img.height = 1600;
-      window.BBChars.drawGhostPortrait(scare.img.getContext('2d'), 1600, 1600, true);
+    kind = kind || 'manjulika';
+    if (!scare.imgs[kind]) {
+      var im = document.createElement('canvas');
+      im.width = 1600;
+      im.height = 1600;
+      window.BBChars.drawGhostPortrait(im.getContext('2d'), 1600, 1600, true, kind);
+      scare.imgs[kind] = im;
     }
+    scare.img = scare.imgs[kind];
     scare.start = performance.now();
     scare.running = true;
     $('jumpscare').classList.add('show');
     requestAnimationFrame(scareFrame);
+  }
+
+  // the red lights over the whole screen (the #redlight layer)
+  function redFlash() {
+    var el = $('redlight');
+    if (!el) { return; }
+    el.classList.remove('flash');
+    void el.offsetWidth;
+    el.classList.add('flash');
+  }
+
+  function redAlarm(on) {
+    var el = $('redlight');
+    if (!el) { return; }
+    el.classList.remove('flash');
+    el.classList.toggle('alarm', on);
   }
 
   function stopScare() {
@@ -1978,6 +2262,21 @@
     vg.addColorStop(1, 'rgba(0,0,0,0.85)');
     c.fillStyle = vg;
     c.fillRect(0, 0, W, H);
+    // red warning lights pulsing around every edge of the screen
+    if (t > 0.42) {
+      var pulse = 0.5 + 0.5 * Math.sin(t * 15);
+      var edge = c.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.35, W / 2, H / 2, Math.max(W, H) * 0.72);
+      edge.addColorStop(0, 'rgba(255,0,25,0)');
+      edge.addColorStop(0.7, 'rgba(255,0,25,' + (0.25 + pulse * 0.3) + ')');
+      edge.addColorStop(1, 'rgba(255,10,40,' + (0.6 + pulse * 0.4) + ')');
+      c.fillStyle = edge;
+      c.fillRect(0, 0, W, H);
+      // and a hard red strobe for the first moments
+      if (t < 1.3 && Math.floor(t * 8) % 2 === 0) {
+        c.fillStyle = 'rgba(200,0,20,0.28)';
+        c.fillRect(0, 0, W, H);
+      }
+    }
     requestAnimationFrame(scareFrame);
   }
 

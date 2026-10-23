@@ -8,9 +8,11 @@ As you go deeper:
   * your lantern gets dimmer
   * the riddles get trickier (you always get 10 seconds to answer)
   * the stone changes colour
+  * from level 7, a second ghost - Anjulika - joins the hunt
 """
 
 MAX_LEVEL = 20
+SECOND_GHOST_LEVEL = 7
 
 # name, shape, carving algorithm, how many extra loops (braid)
 # 'dfs' and 'growing' carve long, twisting corridors with lots of tempting
@@ -65,6 +67,11 @@ WHISPERS = {
         'Tum bhaag nahi sakte... (You cannot run...)',
         'Ruk jao... (Stop...)',
     ],
+    'sister': [
+        'Anjulika jaag gayi... (Anjulika is awake...)',
+        'Do behenein, ek shikaar... (Two sisters, one prey...)',
+        'Doosri taraf se bhi aa rahi hoon... (I am coming from the other side too...)',
+    ],
     'near': [
         'Peeche mudke dekho... (Look behind you...)',
         'Mil gaye... (Found you...)',
@@ -107,6 +114,10 @@ def level_config(level):
         'braid': braid,
         'tiers': tiers,
         'theme': THEMES[step % len(THEMES)],
+        # from level 7 a second monster, Anjulika, hunts you from the other side
+        'second_ghost': level >= SECOND_GHOST_LEVEL,
+        'ghost2_speed': round((1.4 + step * 0.17) * 0.85, 2),
+        'ghost2_wake_delay': round(max(1.0, 5.0 - step * 0.21) + 1.5, 2),
     }
 
 

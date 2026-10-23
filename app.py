@@ -65,6 +65,7 @@ def get_level(level):
         'start': list(maze.start),
         'exit': list(maze.exit),
         'exitWall': maze.exit_wall,
+        'spawn2': list(maze.far_spawn()) if cfg['second_ghost'] else None,
         'blocked': maze.blocked_rows(),
         'parSteps': maze.shortest_path_length(),
         'deadEnds': dead_ends,

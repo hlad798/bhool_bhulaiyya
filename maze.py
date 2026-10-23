@@ -258,6 +258,18 @@ class Maze:
                     best, best_wall, best_d = (r, c), d, dist[r][c]
         return best, best_wall
 
+    def far_spawn(self):
+        """A lair for the second monster: the cell as far as possible from BOTH the
+        start and the exit, so she comes at you from a different direction."""
+        d_start = self.distances(self.start)
+        d_exit = self.distances(self.exit)
+        best, best_score = None, -1
+        for r, c in self.open_cells():
+            score = min(d_start[r][c], d_exit[r][c])
+            if score > best_score:
+                best, best_score = (r, c), score
+        return best
+
     def dead_ends(self):
         result = []
         for r, c in self.open_cells():
