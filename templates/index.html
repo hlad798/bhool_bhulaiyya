@@ -5,6 +5,15 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
   <title>Bhool Bhulaiyya: The Escape Hunt</title>
   <meta name="description" content="A horror maze escape game. Answer the riddles at every dead end before Manjulika catches you.">
+  <!-- installable app -->
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#0b0506">
+  <link rel="icon" type="image/png" sizes="48x48" href="/icons/favicon-48.png">
+  <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Bhool Bhulaiyya">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@700;900&family=Cormorant+Garamond:ital,wght@0,500;0,700;1,500&family=Tiro+Devanagari+Hindi&family=Creepster&display=swap" rel="stylesheet">
@@ -41,6 +50,8 @@
       </div>
       <button id="btn-start" class="btn btn-primary">Enter the Haveli</button>
       <p class="hint">Headphones recommended. Sound starts when you enter.</p>
+      <button id="btn-install" class="btn btn-install" hidden>&#11015; Install the game</button>
+      <p id="ios-install" class="hint" hidden>To install on iPhone: tap <b>Share</b> then <b>Add to Home Screen</b>.</p>
     </div>
   </section>
 
@@ -118,5 +129,32 @@
 
   <script src="/js/characters.js"></script>
   <script src="/js/game.js"></script>
+  <script>
+    // installable app: register the service worker and show an Install button when the browser allows it
+    (function () {
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', function () {
+          navigator.serviceWorker.register('/sw.js').catch(function () { /* not fatal */ });
+        });
+      }
+      var installEvent = null;
+      var btn = document.getElementById('btn-install');
+      var standalone = window.matchMedia('(display-mode: standalone)').matches ||
+                       window.matchMedia('(display-mode: fullscreen)').matches || window.navigator.standalone;
+      window.addEventListener('beforeinstallprompt', function (e) {
+        e.preventDefault();
+        installEvent = e;
+        btn.hidden = false;
+      });
+      btn.addEventListener('click', function () {
+        if (!installEvent) { return; }
+        installEvent.prompt();
+        installEvent.userChoice.then(function () { installEvent = null; btn.hidden = true; });
+      });
+      window.addEventListener('appinstalled', function () { btn.hidden = true; });
+      var isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+      if (isIOS && !standalone) { document.getElementById('ios-install').hidden = false; }
+    })();
+  </script>
 </body>
 </html>
