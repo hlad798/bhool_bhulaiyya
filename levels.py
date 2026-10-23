@@ -6,7 +6,7 @@ Every level:
   * Manjulika moves faster
   * she wakes up sooner
   * your lantern gets dimmer
-  * you get less time to answer at a dead end
+  * the riddles get harder (you always get 10 seconds to answer)
 """
 
 MAX_LEVEL = 5
@@ -47,10 +47,10 @@ def level_config(level):
     size = 9 + 2 * step                      # 9x9, 11x11, 13x13, 15x15, 17x17
     if level <= 2:
         tiers = [1]
-    elif level <= 4:
+    elif level == 3:
         tiers = [1, 2]
     else:
-        tiers = [2, 3]
+        tiers = [2]
     return {
         'level': level,
         'name': LEVEL_NAMES[level],
@@ -59,7 +59,7 @@ def level_config(level):
         'player_speed': 6.5,                              # cells per second
         'ghost_speed': round(2.0 + 0.55 * step, 2),       # 2.0 -> 4.2 cells per second
         'wake_delay': round(max(2.0, 9.0 - 1.75 * step), 2),  # 9s -> 2s head start
-        'question_time': max(10, 22 - 3 * step),          # 22s -> 10s to answer
+        'question_time': 10,                              # 10 seconds to answer, every level
         'light_radius': round(3.4 - 0.3 * step, 2),       # lantern radius in cells
         'braid': round(0.10 - 0.015 * step, 3),           # fewer escape loops later
         'tiers': tiers,
