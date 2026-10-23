@@ -66,7 +66,8 @@
     correct: 0,
     moveCooldown: 0,
     heldDir: null,
-    pendingDir: null,
+    holdTime: 0,
+    tapQueue: [],
     dist: 99,
     distMap: null,
     heartAcc: 0,
@@ -1023,7 +1024,8 @@
     state.time = 0;
     state.correct = 0;
     state.heldDir = null;
-    state.pendingDir = null;
+    state.holdTime = 0;
+    state.tapQueue = [];
     state.moveCooldown = 0;
     state.nearArmed = true;
     state.whisperAcc = 0;
@@ -1148,7 +1150,7 @@
   function openQuestion(de) {
     state.paused = true;
     state.heldDir = null;
-    state.pendingDir = null;
+    state.tapQueue = [];
     var q = de.question;
     state.question = { de: de, remaining: state.cfg.question_time, waiting: false };
     $('q-text').textContent = q.text;
@@ -1242,7 +1244,7 @@
     if (!canMove(p.r, p.c, dir)) { return false; }
     p.r += dir.dr;
     p.c += dir.dc;
-    state.moveCooldown = Math.max(state.moveCooldown, -0.5 / state.cfg.player_speed) + 1 / state.cfg.player_speed;
+    state.moveCooldown = Math.max(state.moveCooldown, 0) + 1 / state.cfg.player_speed;
     afterPlayerMove();
     return true;
   }
@@ -1428,15 +1430,30 @@
 
     state.time += dt;
 
-    // Player input
-    state.moveCooldown -= dt;
+    // Player input:
+    //   * every tap is exactly one step (taps faster than you can move wait in a short queue)
+    //   * holding a key steps once, pauses briefly, then runs at full speed
+    //   * a turn pressed just before a junction is remembered for a moment,
+    //     so it happens as soon as the opening arrives
+    state.moveCooldown = Math.max(state.moveCooldown - dt, -1);
+    if (state.heldDir) { state.holdTime += dt; }
+    for (var qi = state.tapQueue.length - 1; qi >= 0; qi--) {
+      state.tapQueue[qi].ttl -= dt;
+      if (state.tapQueue[qi].ttl <= 0) { state.tapQueue.splice(qi, 1); }
+    }
     if (state.moveCooldown <= 0) {
-      var dir = state.pendingDir || state.heldDir;
-      state.pendingDir = null;
-      if (dir) {
-        tryMove(dir);
-        if (!state.running || state.paused) { return; }
+      var moved = false;
+      if (state.tapQueue.length) {
+        if (tryMove(state.tapQueue[0].dir)) {
+          state.tapQueue.shift();
+          moved = true;
+        }
       }
+      if (!moved && state.heldDir && state.holdTime >= HOLD_DELAY) {
+        moved = tryMove(state.heldDir);
+      }
+      if (!moved) { state.moveCooldown = 0; }
+      if (!state.running || state.paused) { return; }
     }
 
     state.distMap = bfsFromPlayer();
@@ -2764,19 +2781,21 @@
   }
 
   // ================================================================== INPUT
+  var HOLD_DELAY = 0.22;   // seconds a key must be held before it starts running
+  var TURN_MEMORY = 0.3;   // how long a tap that hit a wall is remembered (for corners)
+
   function press(name) {
     Sound.resume();
     if (!state.running || state.paused) { return; }
     state.heldDir = name;
-    if (state.moveCooldown <= 0) {
-      tryMove(name);
-    } else {
-      state.pendingDir = name;
-    }
+    state.holdTime = 0;
+    if (state.moveCooldown <= 0 && !state.tapQueue.length && tryMove(name)) { return; }
+    // not able to step right now (still moving, or a wall in the way): remember the tap
+    if (state.tapQueue.length < 4) { state.tapQueue.push({ dir: name, ttl: TURN_MEMORY }); }
   }
 
   function release(name) {
-    if (state.heldDir === name) { state.heldDir = null; }
+    if (state.heldDir === name) { state.heldDir = null; state.holdTime = 0; }
   }
 
   document.addEventListener('keydown', function (e) {
@@ -2790,7 +2809,7 @@
     var name = KEYMAP[e.key];
     if (name) { release(name); }
   });
-  window.addEventListener('blur', function () { state.heldDir = null; });
+  window.addEventListener('blur', function () { state.heldDir = null; state.holdTime = 0; });
 
   var pads = document.querySelectorAll('.dpad-btn');
   for (var i = 0; i < pads.length; i++) {
