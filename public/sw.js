@@ -1,10 +1,10 @@
 /* Service worker for Bhool Bhulaiyya: The Escape Hunt.
    - The game's own files (page, scripts, styles, icons) are kept in a cache,
      so the installed app opens quickly.
-   - Every time it opens online it fetches fresh copies in the background,
-     so updates you push to GitHub show up on the next launch.
+   - When online it always fetches the newest copies first, so updates you
+     push to GitHub show up straight away; the cache is only a fallback.
    - /api/ requests (mazes, riddles, scores) always go to the Python server. */
-var CACHE = 'bhool-bhulaiyya-v3';
+var CACHE = 'bhool-bhulaiyya-v5';
 var CORE = ['/', '/css/style.css', '/js/characters.js', '/js/game.js', '/manifest.json',
             '/icons/icon-192.png', '/icons/icon-512.png'];
 
@@ -36,15 +36,13 @@ self.addEventListener('fetch', function (event) {
     return;
   }
 
-  // scripts, styles, icons: answer from the cache at once, refresh it in the background
-  event.respondWith(caches.match(req).then(function (cached) {
-    var fresh = fetch(req).then(function (res) {
-      if (res && res.ok) {
-        var copy = res.clone();
-        caches.open(CACHE).then(function (cache) { cache.put(req, copy); });
-      }
-      return res;
-    }).catch(function () { return cached; });
-    return cached || fresh;
-  }));
+  // scripts, styles, icons: always try for the newest copy first, so an update
+  // pushed to GitHub is used straight away; the cached copy is only a fallback
+  event.respondWith(fetch(req).then(function (res) {
+    if (res && res.ok) {
+      var copy = res.clone();
+      caches.open(CACHE).then(function (cache) { cache.put(req, copy); });
+    }
+    return res;
+  }).catch(function () { return caches.match(req); }));
 });
