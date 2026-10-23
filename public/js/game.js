@@ -1147,15 +1147,59 @@
   }
 
   // ================================================================== QUESTIONS
+  // ---- questions already asked this session (kept until the tab is closed)
+  var SEEN_KEY = 'bb-seen-questions';
+  function loadSeen() {
+    try {
+      var raw = window.sessionStorage.getItem(SEEN_KEY);
+      var list = raw ? JSON.parse(raw) : [];
+      return Array.isArray(list) ? list : [];
+    } catch (e) { return []; }
+  }
+  function saveSeen() {
+    try { window.sessionStorage.setItem(SEEN_KEY, JSON.stringify(state.seenQuestions)); } catch (e) { /* in memory is enough */ }
+  }
+  state.seenQuestions = loadSeen();
+
   function openQuestion(de) {
     state.paused = true;
     state.heldDir = null;
     state.tapQueue = [];
-    var q = de.question;
-    state.question = { de: de, remaining: state.cfg.question_time, waiting: false };
-    $('q-text').textContent = q.text;
+    // the clock does not start until the riddle has arrived
+    state.question = { de: de, remaining: state.cfg.question_time, waiting: true };
+    $('q-text').textContent = 'The wall is whispering...';
     $('q-feedback').textContent = '';
     $('q-timer-fill').style.width = '100%';
+    $('q-options').innerHTML = '';
+    $('modal-question').classList.add('show');
+    if (state.ghosts.length) { Sound.herBeat(0.45, ghostPan(state.ghosts[0])); Sound.ghungroo(0.3, ghostPan(state.ghosts[0])); }
+    fetchQuestion(de, 0);
+  }
+
+  function fetchQuestion(de, attempt) {
+    api('/api/question', { level: state.level, seen: state.seenQuestions }).then(function (res) {
+      if (!state.question || state.question.de !== de) { return; }
+      if (res.reset) { state.seenQuestions = []; }
+      de.question = res.question;
+      state.seenQuestions.push(res.question.id);
+      saveSeen();
+      showQuestion(de);
+    }).catch(function () {
+      if (!state.question || state.question.de !== de) { return; }
+      if (attempt < 3) {
+        $('q-feedback').textContent = 'The haveli is silent... trying again.';
+        setTimeout(function () { fetchQuestion(de, attempt + 1); }, 800);
+      } else {
+        $('q-feedback').textContent = 'Could not reach the haveli (network problem).';
+      }
+    });
+  }
+
+  function showQuestion(de) {
+    var q = de.question;
+    state.question.waiting = false;
+    $('q-text').textContent = q.text;
+    $('q-feedback').textContent = '';
     var box = $('q-options');
     box.innerHTML = '';
     for (var i = 0; i < q.options.length; i++) {
@@ -1167,8 +1211,6 @@
         box.appendChild(b);
       })(q.options[i]);
     }
-    $('modal-question').classList.add('show');
-    if (state.ghosts.length) { Sound.herBeat(0.45, ghostPan(state.ghosts[0])); Sound.ghungroo(0.3, ghostPan(state.ghosts[0])); }
   }
 
   function setOptionsDisabled(flag) {
