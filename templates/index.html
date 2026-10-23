@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <title>Bhool Bhulaiyya: The Escape Hunt</title>
+  <meta name="description" content="A horror maze escape game. Answer the riddles at every dead end before Manjulika catches you.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@700;900&family=Cormorant+Garamond:ital,wght@0,500;0,700;1,500&family=Tiro+Devanagari+Hindi&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <div id="fog"></div>
+
+  <!-- ===================== TITLE SCREEN ===================== -->
+  <section id="screen-title" class="screen active">
+    <div class="title-wrap">
+      <p class="hindi">भूल भुलैया</p>
+      <h1>Bhool Bhulaiyya</h1>
+      <h2>The Escape Hunt</h2>
+      <div class="divider"><span></span><i></i><span></span></div>
+      <p class="story">
+        You were told never to open the locked door on the third floor of the old haveli.
+        You opened it anyway. Now the corridors twist and fold like a puzzle box, a ghungroo
+        rings in the dark - and <b>Manjulika</b> is awake.
+      </p>
+      <ul class="rules">
+        <li>Find the glowing door to escape each level.</li>
+        <li>Every <b>dead end</b> holds a riddle. Answer right and the wall crumbles. Answer wrong... she eats you.</li>
+        <li>Each level she wakes sooner and moves faster. Listen to your heartbeat.</li>
+        <li>Move with <b>Arrow keys / WASD</b>, or the buttons on your phone.</li>
+      </ul>
+      <button id="btn-start" class="btn btn-primary">Enter the Haveli</button>
+      <p class="hint">Headphones recommended. Sound starts when you enter.</p>
+    </div>
+  </section>
+
+  <!-- ===================== GAME SCREEN ===================== -->
+  <section id="screen-game" class="screen">
+    <header class="hud">
+      <div class="hud-item">
+        <span class="hud-label">Level</span>
+        <span id="hud-level" class="hud-value">1</span>
+      </div>
+      <div class="hud-item hud-wide">
+        <span class="hud-label">Chamber</span>
+        <span id="hud-name" class="hud-value small">-</span>
+      </div>
+      <div class="hud-item">
+        <span class="hud-label">Time</span>
+        <span id="hud-time" class="hud-value">0.0</span>
+      </div>
+      <div class="hud-item">
+        <span class="hud-label">Score</span>
+        <span id="hud-score" class="hud-value">0</span>
+      </div>
+      <div class="hud-item">
+        <span class="hud-label">Manjulika</span>
+        <span id="hud-ghost" class="hud-value small">Sleeping</span>
+      </div>
+      <button id="btn-mute" class="btn-icon" title="Sound on/off">&#128264;</button>
+    </header>
+
+    <div id="board-wrap">
+      <canvas id="board"></canvas>
+      <div id="whisper"></div>
+      <div id="loading">The haveli is shifting its walls...</div>
+    </div>
+
+    <div id="dpad">
+      <button class="dpad-btn" data-dir="up" aria-label="Up">&#9650;</button>
+      <div class="dpad-row">
+        <button class="dpad-btn" data-dir="left" aria-label="Left">&#9664;</button>
+        <button class="dpad-btn" data-dir="down" aria-label="Down">&#9660;</button>
+        <button class="dpad-btn" data-dir="right" aria-label="Right">&#9654;</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== QUESTION MODAL ===================== -->
+  <div id="modal-question" class="modal">
+    <div class="modal-card question-card">
+      <p class="modal-kicker">A dead end. The wall whispers a riddle...</p>
+      <h3 id="q-text">Question</h3>
+      <div class="timer-bar"><div id="q-timer-fill"></div></div>
+      <div id="q-options" class="options"></div>
+      <p id="q-feedback" class="feedback"></p>
+    </div>
+  </div>
+
+  <!-- ===================== MESSAGE MODAL ===================== -->
+  <div id="modal-message" class="modal">
+    <div class="modal-card">
+      <h3 id="m-title">Title</h3>
+      <p id="m-body"></p>
+      <div id="m-buttons" class="modal-buttons"></div>
+    </div>
+  </div>
+
+  <!-- ===================== JUMPSCARE ===================== -->
+  <div id="jumpscare">
+    <canvas id="scare-canvas" width="600" height="600"></canvas>
+  </div>
+
+  <script src="/js/game.js"></script>
+</body>
+</html>
