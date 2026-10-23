@@ -625,169 +625,502 @@
     }
   }
 
-  // ================================================================== GHOST
-  var GHOST_SKIN = [[216, 213, 208], [178, 175, 172], [98, 96, 108]];
+  // ================================================================== GHOST (cartoon)
+  // Manjulika as a cartoon: bold outlines, flat cel shading, a big head with
+  // huge glowing eyes, wild floating hair, a ghostly tail instead of legs,
+  // and plenty of jewellery - maang tikka, nath with its chain, jhumkas,
+  // a choker and a long haar, bajubands and stacked bangles.
+  var INK = '#1b0f1c';
+  var TOON = {
+    skin: '#d3e6e3', skinShade: '#9fbcc2', skinDeep: '#7b98a3',
+    sari: '#f1e8d8', sariShade: '#c8b8a2', border: '#8e1b2b', gold: '#e6b84a', goldShade: '#a87a1e',
+    blouse: '#7a1426', blouseShade: '#4e0b18', hair: '#151022', hairHi: '#3d3a70',
+    ruby: '#d0203a', pearl: '#f6f1e6', lips: '#5a1424', eyeWhite: '#fff4e6'
+  };
+
+  function ink(c, w) {
+    c.lineJoin = 'round';
+    c.lineCap = 'round';
+    c.strokeStyle = INK;
+    c.lineWidth = w;
+    c.stroke();
+  }
+
+  function bead(c, x, y, r, color) {
+    c.beginPath(); c.arc(x, y, r, 0, TWO_PI);
+    c.fillStyle = color; c.fill();
+    c.lineWidth = Math.max(0.8, r * 0.35); c.strokeStyle = INK; c.stroke();
+    c.fillStyle = 'rgba(255,255,255,0.7)';
+    c.beginPath(); c.arc(x - r * 0.3, y - r * 0.3, r * 0.3, 0, TWO_PI); c.fill();
+  }
+
+  // a chain of beads hanging between two points
+  function beadChain(c, x1, y1, x2, y2, sag, count, r, color) {
+    for (var k = 0; k <= count; k++) {
+      var t = k / count;
+      var x = x1 + (x2 - x1) * t;
+      var y = y1 + (y2 - y1) * t + Math.sin(Math.PI * t) * sag;
+      bead(c, x, y, r, k % 3 === 1 ? TOON.ruby : (k % 3 === 2 ? TOON.pearl : TOON.gold));
+    }
+  }
+
+  function drawToonHairBack(c, cx, cy, s, phase) {
+    var sway = Math.sin(phase) * s * 0.12;
+    c.beginPath();
+    c.moveTo(cx - 0.9 * s, cy - 0.9 * s);
+    c.bezierCurveTo(cx - 1.6 * s, cy - 1.9 * s, cx + 1.6 * s, cy - 1.9 * s, cx + 0.95 * s, cy - 0.9 * s);
+    // right side tendrils
+    c.bezierCurveTo(cx + 1.9 * s + sway, cy - 0.4 * s, cx + 1.4 * s, cy + 0.6 * s, cx + 2.0 * s + sway, cy + 1.3 * s);
+    c.quadraticCurveTo(cx + 1.5 * s, cy + 1.2 * s, cx + 1.6 * s + sway, cy + 2.2 * s);
+    c.quadraticCurveTo(cx + 1.1 * s, cy + 1.6 * s, cx + 0.9 * s, cy + 2.4 * s + sway * 0.5);
+    c.quadraticCurveTo(cx + 0.7 * s, cy + 1.4 * s, cx + 0.5 * s, cy + 1.1 * s);
+    c.lineTo(cx - 0.5 * s, cy + 1.1 * s);
+    // left side tendrils
+    c.quadraticCurveTo(cx - 0.7 * s, cy + 1.4 * s, cx - 0.95 * s, cy + 2.5 * s - sway * 0.5);
+    c.quadraticCurveTo(cx - 1.15 * s, cy + 1.5 * s, cx - 1.7 * s - sway, cy + 2.3 * s);
+    c.quadraticCurveTo(cx - 1.5 * s, cy + 1.2 * s, cx - 2.1 * s - sway, cy + 1.2 * s);
+    c.bezierCurveTo(cx - 1.4 * s, cy + 0.5 * s, cx - 1.9 * s - sway, cy - 0.4 * s, cx - 0.9 * s, cy - 0.9 * s);
+    c.closePath();
+    c.fillStyle = TOON.hair;
+    c.fill();
+    ink(c, s * 0.06);
+    // highlight strands
+    c.strokeStyle = TOON.hairHi;
+    c.lineWidth = s * 0.04;
+    var hs = [[-1.3, -0.2, -1.6, 1.0], [-1.0, 0.4, -1.25, 1.9], [1.3, -0.2, 1.65, 1.0], [1.05, 0.4, 1.3, 1.9], [0.6, -1.4, 1.2, -0.9], [-0.6, -1.4, -1.2, -0.9]];
+    for (var k = 0; k < hs.length; k++) {
+      c.beginPath();
+      c.moveTo(cx + hs[k][0] * s, cy + hs[k][1] * s);
+      c.quadraticCurveTo(cx + (hs[k][0] + hs[k][2]) * 0.55 * s + sway * 0.5, cy + (hs[k][1] + hs[k][3]) * 0.5 * s, cx + hs[k][2] * s + sway, cy + hs[k][3] * s);
+      c.stroke();
+    }
+  }
+
+  function drawToonJhumka(c, x, y, s, swing) {
+    c.save();
+    c.translate(x, y);
+    c.rotate(swing);
+    bead(c, 0, 0, s * 0.07, TOON.ruby);
+    c.beginPath();
+    c.moveTo(-s * 0.2, s * 0.32);
+    c.quadraticCurveTo(-s * 0.18, s * 0.06, 0, s * 0.06);
+    c.quadraticCurveTo(s * 0.18, s * 0.06, s * 0.2, s * 0.32);
+    c.closePath();
+    c.fillStyle = TOON.gold; c.fill();
+    ink(c, s * 0.03);
+    c.fillStyle = TOON.goldShade;
+    c.fillRect(-s * 0.2, s * 0.27, s * 0.4, s * 0.05);
+    for (var k = -2; k <= 2; k++) { bead(c, k * s * 0.09, s * 0.38, s * 0.035, TOON.pearl); }
+    c.restore();
+  }
+
+  // The cartoon face. s = half the face width. Returns where the eyes are.
+  function drawToonFace(c, cx, cy, s, scream, phase) {
+    var chin = scream ? 1.62 * s : 1.3 * s;
+    c.save();
+    c.translate(cx, cy);
+    function facePath() {
+      c.beginPath();
+      c.moveTo(0, -1.2 * s);
+      c.bezierCurveTo(0.78 * s, -1.2 * s, 1.0 * s, -0.7 * s, 0.97 * s, -0.05 * s);
+      c.bezierCurveTo(0.94 * s, 0.6 * s, 0.45 * s, chin - 0.25 * s, 0, chin);
+      c.bezierCurveTo(-0.45 * s, chin - 0.25 * s, -0.94 * s, 0.6 * s, -0.97 * s, -0.05 * s);
+      c.bezierCurveTo(-1.0 * s, -0.7 * s, -0.78 * s, -1.2 * s, 0, -1.2 * s);
+      c.closePath();
+    }
+    facePath();
+    c.fillStyle = TOON.skin;
+    c.fill();
+    // cel shading: shadow down the right side and under the cheekbones
+    c.save();
+    facePath();
+    c.clip();
+    c.fillStyle = TOON.skinShade;
+    c.beginPath(); c.ellipse(0.75 * s, 0.2 * s, 0.55 * s, 1.5 * s, 0.1, 0, TWO_PI); c.fill();
+    c.beginPath(); c.ellipse(-0.6 * s, 0.55 * s, 0.22 * s, 0.12 * s, -0.4, 0, TWO_PI); c.fill();
+    c.beginPath(); c.ellipse(0.55 * s, 0.55 * s, 0.22 * s, 0.12 * s, 0.4, 0, TWO_PI); c.fill();
+    c.fillStyle = 'rgba(255,255,255,0.35)';
+    c.beginPath(); c.ellipse(-0.35 * s, -0.75 * s, 0.35 * s, 0.14 * s, -0.2, 0, TWO_PI); c.fill();
+    c.restore();
+    facePath();
+    ink(c, s * 0.065);
+
+    var ey = -0.12 * s, ex = 0.4 * s;
+    var eh = scream ? 0.3 * s : 0.2 * s;
+    var eyes = [];
+    for (var i = 0; i < 2; i++) {
+      var side = i === 0 ? -1 : 1;
+      var x = side * ex;
+      // dark hollow around the eye
+      c.fillStyle = 'rgba(70,30,80,0.55)';
+      c.beginPath(); c.ellipse(x, ey + 0.05 * s, 0.34 * s, eh + 0.12 * s, 0, 0, TWO_PI); c.fill();
+      // almond eye
+      var inner = x - side * 0.27 * s, outer = x + side * 0.29 * s;
+      c.beginPath();
+      c.moveTo(inner, ey + 0.03 * s);
+      c.quadraticCurveTo(x, ey - eh * 1.7, outer, ey - 0.06 * s);
+      c.quadraticCurveTo(x, ey + eh * 1.3, inner, ey + 0.03 * s);
+      c.closePath();
+      c.fillStyle = TOON.eyeWhite;
+      c.fill();
+      c.save();
+      c.clip();
+      var ig = c.createRadialGradient(x, ey, 0, x, ey, 0.16 * s);
+      ig.addColorStop(0, '#fff2b0');
+      ig.addColorStop(0.35, '#ff3a4a');
+      ig.addColorStop(1, '#6e0010');
+      c.fillStyle = ig;
+      c.beginPath(); c.arc(x, ey, 0.16 * s, 0, TWO_PI); c.fill();
+      c.fillStyle = '#120006';
+      c.beginPath(); c.ellipse(x, ey, 0.025 * s, scream ? 0.06 * s : 0.11 * s, 0, 0, TWO_PI); c.fill();
+      c.fillStyle = 'rgba(255,255,255,0.9)';
+      c.beginPath(); c.arc(x - 0.06 * s, ey - 0.06 * s, 0.035 * s, 0, TWO_PI); c.fill();
+      c.restore();
+      // heavy kajal with a sharp wing
+      c.beginPath();
+      c.moveTo(inner - side * 0.02 * s, ey + 0.04 * s);
+      c.quadraticCurveTo(x, ey - eh * 1.75, outer, ey - 0.06 * s);
+      c.lineTo(outer + side * 0.2 * s, ey - 0.2 * s);
+      ink(c, s * 0.075);
+      c.beginPath();
+      c.moveTo(inner, ey + 0.03 * s);
+      c.quadraticCurveTo(x, ey + eh * 1.3, outer, ey - 0.06 * s);
+      ink(c, s * 0.035);
+      // angry brow slanting down to the middle
+      c.beginPath();
+      c.moveTo(x - side * 0.3 * s, ey - 0.22 * s - (scream ? 0.1 * s : 0));
+      c.quadraticCurveTo(x + side * 0.05 * s, ey - 0.5 * s, x + side * 0.36 * s, ey - 0.42 * s);
+      ink(c, s * 0.085);
+      eyes.push([cx + x, cy + ey]);
+    }
+
+    // nose and the nath (big nose ring) with its chain to the ear
+    c.beginPath();
+    c.moveTo(-0.06 * s, 0.32 * s);
+    c.quadraticCurveTo(-0.13 * s, 0.42 * s, -0.04 * s, 0.45 * s);
+    c.moveTo(0.06 * s, 0.32 * s);
+    c.quadraticCurveTo(0.13 * s, 0.42 * s, 0.04 * s, 0.45 * s);
+    ink(c, s * 0.035);
+    c.beginPath();
+    c.arc(0.13 * s, 0.5 * s, 0.16 * s, -2.4, 1.9);
+    c.strokeStyle = TOON.gold;
+    c.lineWidth = s * 0.04;
+    c.stroke();
+    bead(c, 0.13 * s + Math.cos(1.2) * 0.16 * s, 0.5 * s + Math.sin(1.2) * 0.16 * s, s * 0.045, TOON.ruby);
+    bead(c, 0.13 * s + Math.cos(0.4) * 0.16 * s, 0.5 * s + Math.sin(0.4) * 0.16 * s, s * 0.03, TOON.pearl);
+    beadChain(c, 0.28 * s, 0.45 * s, 0.95 * s, 0.05 * s, 0.25 * s, 9, s * 0.022, TOON.gold);
+
+    // mouth
+    if (!scream) {
+      c.beginPath();
+      c.moveTo(-0.32 * s, 0.72 * s);
+      c.quadraticCurveTo(0, 0.88 * s, 0.32 * s, 0.68 * s);
+      c.quadraticCurveTo(0.36 * s, 0.62 * s, 0.4 * s, 0.6 * s);
+      c.moveTo(-0.32 * s, 0.72 * s);
+      c.quadraticCurveTo(-0.36 * s, 0.66 * s, -0.4 * s, 0.64 * s);
+      c.strokeStyle = TOON.lips;
+      c.lineWidth = s * 0.1;
+      c.stroke();
+      c.beginPath();
+      c.moveTo(-0.34 * s, 0.72 * s);
+      c.quadraticCurveTo(0, 0.86 * s, 0.34 * s, 0.68 * s);
+      ink(c, s * 0.04);
+      // two little fangs
+      c.fillStyle = '#ffffff';
+      c.beginPath();
+      c.moveTo(-0.17 * s, 0.77 * s); c.lineTo(-0.11 * s, 0.79 * s); c.lineTo(-0.14 * s, 0.9 * s); c.closePath();
+      c.moveTo(0.14 * s, 0.76 * s); c.lineTo(0.2 * s, 0.74 * s); c.lineTo(0.18 * s, 0.86 * s); c.closePath();
+      c.fill();
+      ink(c, s * 0.02);
+    } else {
+      var top = 0.6 * s, bot = chin - 0.22 * s;
+      c.beginPath();
+      c.moveTo(-0.38 * s, top);
+      c.quadraticCurveTo(0, top - 0.14 * s, 0.38 * s, top);
+      c.bezierCurveTo(0.48 * s, (top + bot) / 2, 0.25 * s, bot, 0, bot);
+      c.bezierCurveTo(-0.25 * s, bot, -0.48 * s, (top + bot) / 2, -0.38 * s, top);
+      c.closePath();
+      c.fillStyle = '#24030b';
+      c.fill();
+      c.save();
+      c.clip();
+      c.fillStyle = '#8e1b2b';
+      c.beginPath(); c.ellipse(0, bot, 0.26 * s, 0.16 * s, 0, 0, TWO_PI); c.fill();
+      c.fillStyle = '#fffaf0';
+      for (var tt = -4; tt <= 4; tt++) {
+        var tx = tt * 0.085 * s;
+        c.beginPath();
+        c.moveTo(tx - 0.045 * s, top - 0.1 * s); c.lineTo(tx + 0.045 * s, top - 0.1 * s); c.lineTo(tx, top + (Math.abs(tt) % 2 ? 0.12 : 0.2) * s);
+        c.closePath(); c.fill();
+        c.beginPath();
+        c.moveTo(tx - 0.04 * s, bot + 0.05 * s); c.lineTo(tx + 0.04 * s, bot + 0.05 * s); c.lineTo(tx, bot - (Math.abs(tt) % 2 ? 0.1 : 0.16) * s);
+        c.closePath(); c.fill();
+      }
+      c.restore();
+      c.beginPath();
+      c.moveTo(-0.38 * s, top);
+      c.quadraticCurveTo(0, top - 0.14 * s, 0.38 * s, top);
+      c.bezierCurveTo(0.48 * s, (top + bot) / 2, 0.25 * s, bot, 0, bot);
+      c.bezierCurveTo(-0.25 * s, bot, -0.48 * s, (top + bot) / 2, -0.38 * s, top);
+      c.closePath();
+      c.strokeStyle = TOON.lips;
+      c.lineWidth = s * 0.08;
+      c.stroke();
+      ink(c, s * 0.035);
+    }
+
+    // bindi and maang tikka
+    bead(c, 0, -0.6 * s, s * 0.06, TOON.ruby);
+    c.restore();
+    return { eyes: eyes, ear: 0.98 * s };
+  }
+
+  function drawToonHairFront(c, cx, cy, s, phase) {
+    var sway = Math.sin(phase + 0.7) * s * 0.08;
+    for (var i = 0; i < 2; i++) {
+      var side = i === 0 ? -1 : 1;
+      c.beginPath();
+      c.moveTo(cx, cy - 1.32 * s);
+      c.bezierCurveTo(cx + side * 0.75 * s, cy - 1.35 * s, cx + side * 1.15 * s, cy - 0.8 * s, cx + side * 1.08 * s, cy + 0.1 * s);
+      c.bezierCurveTo(cx + side * 1.1 * s, cy + 0.8 * s, cx + side * 1.0 * s + sway, cy + 1.4 * s, cx + side * 0.82 * s + sway, cy + 1.9 * s);
+      c.quadraticCurveTo(cx + side * 0.8 * s, cy + 1.0 * s, cx + side * 0.86 * s, cy + 0.3 * s);
+      c.bezierCurveTo(cx + side * 0.9 * s, cy - 0.5 * s, cx + side * 0.55 * s, cy - 0.95 * s, cx + side * 0.04 * s, cy - 1.0 * s);
+      c.closePath();
+      c.fillStyle = TOON.hair;
+      c.fill();
+      ink(c, s * 0.055);
+      c.beginPath();
+      c.moveTo(cx + side * 0.35 * s, cy - 1.18 * s);
+      c.quadraticCurveTo(cx + side * 0.95 * s, cy - 0.85 * s, cx + side * 0.98 * s, cy + 0.2 * s);
+      c.strokeStyle = TOON.hairHi;
+      c.lineWidth = s * 0.04;
+      c.stroke();
+    }
+    // sindoor in the parting and the maang tikka chain and pendant
+    c.beginPath(); c.moveTo(cx, cy - 1.33 * s); c.lineTo(cx, cy - 1.02 * s);
+    c.strokeStyle = '#c0182c'; c.lineWidth = s * 0.06; c.stroke();
+    beadChain(c, cx, cy - 1.35 * s, cx, cy - 0.98 * s, 0, 4, s * 0.03, TOON.gold);
+    c.beginPath();
+    c.moveTo(cx, cy - 0.98 * s);
+    c.quadraticCurveTo(cx + 0.14 * s, cy - 0.84 * s, cx, cy - 0.72 * s);
+    c.quadraticCurveTo(cx - 0.14 * s, cy - 0.84 * s, cx, cy - 0.98 * s);
+    c.fillStyle = TOON.gold; c.fill();
+    ink(c, s * 0.025);
+    bead(c, cx, cy - 0.86 * s, s * 0.05, TOON.ruby);
+    bead(c, cx, cy - 0.68 * s, s * 0.03, TOON.pearl);
+    // side chains along the hairline
+    beadChain(c, cx - 0.04 * s, cy - 1.15 * s, cx - 0.78 * s, cy - 0.78 * s, 0.12 * s, 6, s * 0.022, TOON.gold);
+    beadChain(c, cx + 0.04 * s, cy - 1.15 * s, cx + 0.78 * s, cy - 0.78 * s, 0.12 * s, 6, s * 0.022, TOON.gold);
+  }
+
+  function toonLimb(c, x1, y1, x2, y2, w1, w2, fill, shade) {
+    var ang = Math.atan2(y2 - y1, x2 - x1);
+    var nx = -Math.sin(ang), ny = Math.cos(ang);
+    c.beginPath();
+    c.moveTo(x1 + nx * w1, y1 + ny * w1);
+    c.lineTo(x2 + nx * w2, y2 + ny * w2);
+    c.arc(x2, y2, w2, ang + Math.PI / 2, ang - Math.PI / 2, true);
+    c.lineTo(x1 - nx * w1, y1 - ny * w1);
+    c.arc(x1, y1, w1, ang - Math.PI / 2, ang + Math.PI / 2, true);
+    c.closePath();
+    c.fillStyle = fill;
+    c.fill();
+    c.save();
+    c.clip();
+    c.beginPath();
+    c.moveTo(x1 - nx * w1 * 0.2, y1 - ny * w1 * 0.2);
+    c.lineTo(x2 - nx * w2 * 0.2, y2 - ny * w2 * 0.2);
+    c.lineTo(x2 - nx * w2 * 2, y2 - ny * w2 * 2);
+    c.lineTo(x1 - nx * w1 * 2, y1 - ny * w1 * 2);
+    c.closePath();
+    c.fillStyle = shade;
+    c.fill();
+    c.restore();
+    c.beginPath();
+    c.moveTo(x1 + nx * w1, y1 + ny * w1);
+    c.lineTo(x2 + nx * w2, y2 + ny * w2);
+    c.arc(x2, y2, w2, ang + Math.PI / 2, ang - Math.PI / 2, true);
+    c.lineTo(x1 - nx * w1, y1 - ny * w1);
+    ink(c, 3.5);
+  }
+
+  function drawClawHand(c, x, y, ang, s) {
+    c.save();
+    c.translate(x, y);
+    c.rotate(ang);
+    c.beginPath(); c.ellipse(s * 0.3, 0, s * 0.36, s * 0.28, 0, 0, TWO_PI);
+    c.fillStyle = TOON.skin; c.fill(); ink(c, 3);
+    var fingers = [-0.22, -0.07, 0.08, 0.22];
+    for (var f = 0; f < fingers.length; f++) {
+      var fy = fingers[f] * s;
+      c.beginPath();
+      c.moveTo(s * 0.55, fy);
+      c.quadraticCurveTo(s * 0.95, fy - s * 0.05, s * 1.15, fy + s * 0.12);
+      c.strokeStyle = INK; c.lineWidth = s * 0.16; c.stroke();
+      c.strokeStyle = TOON.skin; c.lineWidth = s * 0.1; c.stroke();
+      c.beginPath();
+      c.moveTo(s * 1.12, fy + s * 0.1);
+      c.lineTo(s * 1.32, fy + s * 0.24);
+      c.strokeStyle = '#4a0614'; c.lineWidth = s * 0.07; c.stroke();
+    }
+    c.beginPath();
+    c.moveTo(s * 0.2, -s * 0.22);
+    c.quadraticCurveTo(s * 0.45, -s * 0.5, s * 0.72, -s * 0.46);
+    c.strokeStyle = INK; c.lineWidth = s * 0.17; c.stroke();
+    c.strokeStyle = TOON.skin; c.lineWidth = s * 0.11; c.stroke();
+    c.restore();
+  }
+
+  function drawToonBangles(c, x, y, ang, r) {
+    var colors = [TOON.ruby, TOON.gold, TOON.ruby, TOON.gold, '#1e7a46', TOON.gold];
+    for (var b = 0; b < colors.length; b++) {
+      var off = (b - 2.5) * r * 0.36;
+      c.save();
+      c.translate(x + Math.cos(ang) * off, y + Math.sin(ang) * off);
+      c.rotate(ang);
+      c.beginPath(); c.ellipse(0, 0, r * 0.32, r * 1.15, 0, 0, TWO_PI);
+      c.strokeStyle = INK; c.lineWidth = r * 0.42; c.stroke();
+      c.strokeStyle = colors[b]; c.lineWidth = r * 0.26; c.stroke();
+      c.restore();
+    }
+  }
 
   function paintGhost(frame, frames) {
-    var W = 320, H = 640, cx = 160;
-    var cv = makeCanvas(W, H);
+    var W = 320, H = 640, cx = 160, SR = 2;
+    var cv = makeCanvas(W * SR, H * SR);
     var c = cv.getContext('2d');
-    var R = seeded(1234);
+    c.scale(SR, SR);
     var phase = TWO_PI * frame / frames;
-    var sway = Math.sin(phase) * 7;
-    var armSway = Math.sin(phase + 1) * 4;
-    var u = 30, fy = 96;
+    var sway = Math.sin(phase) * 9;
+    var s = 54, fy = 150;
     var k;
 
-    drawLongHairBack(c, cx, fy, u, 430, sway, R);
+    // spooky aura
+    var aura = c.createRadialGradient(cx, 330, 20, cx, 330, 230);
+    aura.addColorStop(0, 'rgba(140,90,255,0.22)');
+    aura.addColorStop(1, 'rgba(140,90,255,0)');
+    c.fillStyle = aura;
+    c.fillRect(0, 0, W, H);
 
-    // ---- sari skirt with pleats, fading into mist at the bottom
-    var hemY = 610;
-    var hem = [];
-    for (k = 0; k <= 14; k++) {
-      var hx = cx - 96 + k * (192 / 14) + sway;
-      hem.push([hx, hemY - R() * 9 + Math.sin(phase * 2 + k) * 4]);
-    }
+    drawToonHairBack(c, cx, fy, s, phase);
+
+    // pallu streaming out behind her in the ghostly wind
     c.beginPath();
-    c.moveTo(cx - 50, 268);
-    c.bezierCurveTo(cx - 62, 360, cx - 98, 470, hem[0][0], hem[0][1]);
-    for (k = 1; k < hem.length; k++) { c.lineTo(hem[k][0], hem[k][1]); }
-    c.bezierCurveTo(cx + 98, 470, cx + 62, 360, cx + 50, 268);
+    c.moveTo(cx - 52, 262);
+    c.bezierCurveTo(cx - 110, 250 + sway, cx - 140, 330 - sway, cx - 150 + sway, 410);
+    c.quadraticCurveTo(cx - 120, 400, cx - 112 + sway * 0.5, 440);
+    c.bezierCurveTo(cx - 100, 380, cx - 80, 320, cx - 40, 300);
     c.closePath();
-    var sg = c.createLinearGradient(cx - 100, 0, cx + 100, 0);
-    sg.addColorStop(0, '#7f786d');
-    sg.addColorStop(0.28, '#cbc4b4');
-    sg.addColorStop(0.5, '#ddd6c6');
-    sg.addColorStop(0.78, '#b8b1a1');
-    sg.addColorStop(1, '#6f695f');
-    c.fillStyle = sg;
-    c.fill();
+    c.fillStyle = TOON.sariShade; c.fill(); ink(c, 3.5);
+    c.beginPath();
+    c.moveTo(cx - 146 + sway, 404);
+    c.quadraticCurveTo(cx - 122, 396, cx - 114 + sway * 0.5, 430);
+    c.strokeStyle = TOON.border; c.lineWidth = 6; c.stroke();
+
+    // ghostly sari skirt tapering into a curling tail
+    c.beginPath();
+    c.moveTo(cx - 46, 330);
+    c.bezierCurveTo(cx - 85, 400, cx - 80, 470, cx - 50 + sway * 0.5, 530);
+    c.bezierCurveTo(cx - 20 + sway, 580, cx + 30 + sway, 600, cx + 55 + sway * 1.5, 628);
+    c.bezierCurveTo(cx + 40 + sway, 590, cx + 70 + sway * 0.5, 540, cx + 72, 480);
+    c.bezierCurveTo(cx + 78, 420, cx + 66, 370, cx + 46, 330);
+    c.closePath();
+    c.fillStyle = TOON.sari; c.fill();
     c.save();
     c.clip();
-    for (k = 0; k < 10; k++) {
-      var x0 = cx - 24 + k * 5, x1 = cx - 66 + k * 12 + sway;
-      var x0b = cx - 19 + k * 5, x1b = cx - 54 + k * 12 + sway;
-      c.fillStyle = k % 2 ? 'rgba(255,255,255,0.13)' : 'rgba(40,30,20,0.14)';
-      c.beginPath();
-      c.moveTo(x0, 272); c.lineTo(x0b, 272); c.lineTo(x1b, hemY + 10); c.lineTo(x1, hemY + 10);
-      c.closePath(); c.fill();
-      stroke(c, 'rgba(60,50,40,0.3)', 1.2, [x0, 272, x1, hemY + 10]);
-    }
-    for (k = 0; k < 6; k++) {
-      var side = k % 2 ? 1 : -1;
-      var fx = cx + side * (40 + R() * 40);
-      stroke(c, 'rgba(70,60,50,0.25)', 2, [fx, 300 + R() * 60, fx + side * 18, 460, fx + side * (26 + R() * 10) + sway, hemY]);
-    }
+    c.fillStyle = TOON.sariShade;
+    c.beginPath(); c.ellipse(cx + 60, 450, 40, 160, 0.15, 0, TWO_PI); c.fill();
     for (k = 0; k < 5; k++) {
-      softSpot(c, cx + (R() - 0.5) * 140, 330 + R() * 240, 18 + R() * 22, 12 + R() * 18,
-        k === 0 ? [90, 20, 20] : [95, 70, 45], 0.16);
+      c.beginPath();
+      c.moveTo(cx - 20 + k * 12, 335);
+      c.quadraticCurveTo(cx - 25 + k * 14 + sway * 0.3, 450, cx - 10 + k * 16 + sway, 560);
+      c.strokeStyle = 'rgba(150,130,110,0.6)'; c.lineWidth = 2; c.stroke();
     }
     c.restore();
-    var band = [];
-    for (k = 0; k < hem.length; k++) { band.push([hem[k][0], hem[k][1] - 22]); }
-    sariBorder(c, band, 15, R);
+    c.beginPath();
+    c.moveTo(cx - 46, 330);
+    c.bezierCurveTo(cx - 85, 400, cx - 80, 470, cx - 50 + sway * 0.5, 530);
+    c.bezierCurveTo(cx - 20 + sway, 580, cx + 30 + sway, 600, cx + 55 + sway * 1.5, 628);
+    c.bezierCurveTo(cx + 40 + sway, 590, cx + 70 + sway * 0.5, 540, cx + 72, 480);
+    c.bezierCurveTo(cx + 78, 420, cx + 66, 370, cx + 46, 330);
+    ink(c, 3.5);
+    // a border band across the skirt
+    c.beginPath();
+    c.moveTo(cx - 78, 460);
+    c.quadraticCurveTo(cx, 488, cx + 75, 455);
+    c.strokeStyle = TOON.border; c.lineWidth = 10; c.stroke();
+    c.strokeStyle = TOON.gold; c.lineWidth = 2.5; c.stroke();
 
-    // ---- waist (bare midriff) and blouse
-    c.fillStyle = rgba(GHOST_SKIN[1], 1);
+    // torso: blouse and midriff
     c.beginPath();
-    c.moveTo(cx - 54, 240); c.lineTo(cx + 54, 240); c.lineTo(cx + 50, 276); c.lineTo(cx - 50, 276);
-    c.closePath(); c.fill();
-    softSpot(c, cx + 25, 258, 30, 14, GHOST_SKIN[2], 0.6);
-    stroke(c, 'rgba(60,55,60,0.5)', 2, [cx - 6, 262, cx - 4, 266]);
+    c.moveTo(cx - 60, 270); c.quadraticCurveTo(cx, 248, cx + 60, 270);
+    c.lineTo(cx + 46, 312); c.lineTo(cx - 46, 312);
+    c.closePath();
+    c.fillStyle = TOON.blouse; c.fill(); ink(c, 3.5);
+    c.beginPath();
+    c.moveTo(cx - 46, 312); c.lineTo(cx + 46, 312); c.lineTo(cx + 46, 334); c.lineTo(cx - 46, 334);
+    c.closePath();
+    c.fillStyle = TOON.skin; c.fill(); ink(c, 3);
 
-    var bg = c.createLinearGradient(cx - 80, 0, cx + 80, 0);
-    bg.addColorStop(0, '#2c080c');
-    bg.addColorStop(0.4, '#5a1219');
-    bg.addColorStop(1, '#2c080c');
-    c.fillStyle = bg;
+    // pallu across the chest
     c.beginPath();
-    c.moveTo(cx - 80, 186);
-    c.quadraticCurveTo(cx - 64, 166, cx - 30, 163);
-    c.lineTo(cx + 30, 163);
-    c.quadraticCurveTo(cx + 64, 166, cx + 80, 186);
-    c.lineTo(cx + 62, 244);
-    c.lineTo(cx - 62, 244);
+    c.moveTo(cx + 50, 338); c.lineTo(cx + 18, 340); c.lineTo(cx - 58, 266); c.lineTo(cx - 30, 254);
     c.closePath();
-    c.fill();
-    // neckline
-    c.fillStyle = rgba(GHOST_SKIN[1], 1);
-    c.beginPath();
-    c.moveTo(cx - 34, 163);
-    c.quadraticCurveTo(cx, 214, cx + 34, 163);
-    c.closePath();
-    c.fill();
-    softSpot(c, cx, 170, 36, 12, GHOST_SKIN[2], 0.5);
-    stroke(c, rgba(GHOST_SKIN[2], 0.6), 2, [cx - 30, 172, cx - 14, 176, cx - 4, 178]);
-    stroke(c, rgba(GHOST_SKIN[2], 0.6), 2, [cx + 30, 172, cx + 14, 176, cx + 4, 178]);
+    c.fillStyle = TOON.sari; c.fill(); ink(c, 3);
+    c.beginPath(); c.moveTo(cx - 30, 258); c.lineTo(cx + 48, 334);
+    c.strokeStyle = TOON.border; c.lineWidth = 7; c.stroke();
+    c.strokeStyle = TOON.gold; c.lineWidth = 2; c.stroke();
 
-    // ---- pallu: from the right of the waist, across the chest, over the left shoulder
-    var pA = [cx + 58, 300], pB = [cx + 26, 262], pC = [cx - 50, 160], pD = [cx - 86, 194];
-    c.beginPath();
-    c.moveTo(pA[0], pA[1]); c.lineTo(pB[0], pB[1]); c.lineTo(pC[0], pC[1]); c.lineTo(pD[0], pD[1]);
-    c.closePath();
-    var pg = c.createLinearGradient(pD[0], pD[1], pB[0], pB[1]);
-    pg.addColorStop(0, '#a49d8e');
-    pg.addColorStop(0.5, '#ddd6c6');
-    pg.addColorStop(1, '#bdb6a6');
-    c.fillStyle = pg;
-    c.fill();
-    c.save();
-    c.clip();
-    for (k = 1; k < 7; k++) {
-      var t1 = k / 7;
-      var ax = pD[0] + (pC[0] - pD[0]) * t1, ay = pD[1] + (pC[1] - pD[1]) * t1;
-      var bx = pA[0] + (pB[0] - pA[0]) * t1, by = pA[1] + (pB[1] - pA[1]) * t1;
-      stroke(c, k % 2 ? 'rgba(255,255,255,0.22)' : 'rgba(50,40,30,0.25)', 3, [ax, ay, bx, by]);
-    }
-    c.restore();
-    sariBorder(c, [pC, pB], 10, R);
-    sariBorder(c, [pD, pA], 10, R);
-    // the end of the pallu hanging down behind the left shoulder
-    c.beginPath();
-    c.moveTo(pD[0], pD[1]); c.lineTo(pC[0], pC[1]);
-    c.lineTo(cx - 70 + sway * 0.5, 370); c.lineTo(cx - 104 + sway * 0.6, 356);
-    c.closePath();
-    c.fillStyle = '#b3ac9d';
-    c.fill();
-    sariBorder(c, [[pD[0], pD[1]], [cx - 104 + sway * 0.6, 356]], 10, R);
-
-    // ---- arms reaching out, with bangles
+    // arms raised, claws out, with bajubands and stacked bangles
     var arms = [
-      { s: [cx - 74, 194], e: [cx - 104, 268 + armSway], w: [cx - 128, 322 + armSway], ang: 1.2 },
-      { s: [cx + 74, 194], e: [cx + 106, 258 - armSway], w: [cx + 134, 306 - armSway], ang: 0.95 }
+      { s: [cx - 58, 276], e: [cx - 100, 318], w: [cx - 132, 268 - sway * 0.3], ang: -1.0 },
+      { s: [cx + 58, 276], e: [cx + 102, 312], w: [cx + 136, 262 + sway * 0.3], ang: -2.1 }
     ];
     for (k = 0; k < arms.length; k++) {
       var A = arms[k];
-      limb(c, A.s[0], A.s[1], A.e[0], A.e[1], 12, 9, GHOST_SKIN[2], GHOST_SKIN[1], GHOST_SKIN[0]);
-      limb(c, A.e[0], A.e[1], A.w[0], A.w[1], 9, 6.5, GHOST_SKIN[2], GHOST_SKIN[1], GHOST_SKIN[0]);
-      // short blouse sleeve
-      limb(c, A.s[0], A.s[1], A.s[0] + (A.e[0] - A.s[0]) * 0.35, A.s[1] + (A.e[1] - A.s[1]) * 0.35, 14, 12,
-        [40, 8, 12], [90, 18, 25], [120, 30, 38]);
-      var ang = Math.atan2(A.w[1] - A.e[1], A.w[0] - A.e[0]);
-      drawBangles(c, A.e[0] + (A.w[0] - A.e[0]) * 0.8, A.e[1] + (A.w[1] - A.e[1]) * 0.8, ang, 7.5);
-      drawHand(c, A.w[0], A.w[1], ang, 24, GHOST_SKIN, '#1a0d10');
+      toonLimb(c, A.s[0], A.s[1], A.e[0], A.e[1], 10, 8, TOON.skin, TOON.skinShade);
+      toonLimb(c, A.e[0], A.e[1], A.w[0], A.w[1], 8, 6.5, TOON.skin, TOON.skinShade);
+      var mx = A.s[0] + (A.e[0] - A.s[0]) * 0.45, my = A.s[1] + (A.e[1] - A.s[1]) * 0.45;
+      var upAng = Math.atan2(A.e[1] - A.s[1], A.e[0] - A.s[0]);
+      drawToonBangles(c, mx, my, upAng, 5);
+      var fa = Math.atan2(A.w[1] - A.e[1], A.w[0] - A.e[0]);
+      drawToonBangles(c, A.e[0] + (A.w[0] - A.e[0]) * 0.72, A.e[1] + (A.w[1] - A.e[1]) * 0.72, fa, 6.5);
+      drawClawHand(c, A.w[0], A.w[1], fa, 22);
     }
 
-    // ---- head
-    drawNeck(c, cx, fy, u, GHOST_SKIN, true);
-    var eyes = drawFace(c, cx, fy, u, { ghost: true, scream: false, rand: seeded(77) });
-    drawJhumka(c, cx - eyes.ear, fy + 0.25 * u, u);
-    drawJhumka(c, cx + eyes.ear, fy + 0.25 * u, u);
-    drawLongHairFront(c, cx, fy, u, 420, sway, R, true);
+    // neck, choker and a long haar
+    c.beginPath();
+    c.moveTo(cx - 17, fy + 60); c.lineTo(cx - 20, 262); c.lineTo(cx + 20, 262); c.lineTo(cx + 17, fy + 60);
+    c.closePath();
+    c.fillStyle = TOON.skin; c.fill(); ink(c, 3);
+    c.fillStyle = TOON.skinShade;
+    c.fillRect(cx - 16, fy + 66, 32, 10);
+    c.beginPath();
+    c.moveTo(cx - 20, 244); c.quadraticCurveTo(cx, 256, cx + 20, 244);
+    c.strokeStyle = INK; c.lineWidth = 9; c.stroke();
+    c.strokeStyle = TOON.gold; c.lineWidth = 6; c.stroke();
+    for (k = -2; k <= 2; k++) { bead(c, cx + k * 7.5, 251 + (2 - Math.abs(k)) * 1.6, 3, k === 0 ? TOON.ruby : '#1e7a46'); }
+    beadChain(c, cx - 26, 262, cx + 26, 262, 46, 16, 2.6, TOON.gold);
+    c.beginPath();
+    c.moveTo(cx - 9, 306); c.lineTo(cx + 9, 306); c.lineTo(cx, 322); c.closePath();
+    c.fillStyle = TOON.gold; c.fill(); ink(c, 2);
+    bead(c, cx, 311, 3.5, TOON.ruby);
 
-    // ---- cold, deathly tint over everything, and fade the hem into mist
-    c.globalCompositeOperation = 'source-atop';
-    c.fillStyle = 'rgba(110,135,170,0.14)';
-    c.fillRect(0, 0, W, H);
+    var face = drawToonFace(c, cx, fy, s, false, phase);
+    drawToonJhumka(c, cx - face.ear, fy + 0.15 * s, s, Math.sin(phase) * 0.15);
+    drawToonJhumka(c, cx + face.ear, fy + 0.15 * s, s, -Math.sin(phase) * 0.15);
+    drawToonHairFront(c, cx, fy, s, phase);
+
+    // the tail fades into mist
     c.globalCompositeOperation = 'destination-out';
-    var fade = c.createLinearGradient(0, 470, 0, H);
+    var fade = c.createLinearGradient(0, 520, 0, H);
     fade.addColorStop(0, 'rgba(0,0,0,0)');
-    fade.addColorStop(1, 'rgba(0,0,0,1)');
+    fade.addColorStop(1, 'rgba(0,0,0,0.9)');
     c.fillStyle = fade;
-    c.fillRect(0, 470, W, H - 470);
+    c.fillRect(0, 520, W, H - 520);
     c.globalCompositeOperation = 'source-over';
 
-    return { canvas: cv, eyes: [[eyes.left[0] / W, eyes.left[1] / H], [eyes.right[0] / W, eyes.right[1] / H]] };
+    return { canvas: cv, eyes: [[face.eyes[0][0] / W, face.eyes[0][1] / H], [face.eyes[1][0] / W, face.eyes[1][1] / H]] };
   }
 
   // ================================================================== PLAYERS
@@ -999,9 +1332,10 @@
   }
 
   function paintMale() {
-    var W = 320, H = 640, cx = 160;
-    var cv = makeCanvas(W, H);
+    var W = 320, H = 640, cx = 160, SR = 2;
+    var cv = makeCanvas(W * SR, H * SR);
     var c = cv.getContext('2d');
+    c.scale(SR, SR);
     var R = seeded(4321);
     var u = 27, fy = 92;
     var HD = [24, 26, 31], HM = [51, 55, 63], HL = [80, 86, 98];
@@ -1073,9 +1407,10 @@
   }
 
   function paintFemale() {
-    var W = 320, H = 640, cx = 160;
-    var cv = makeCanvas(W, H);
+    var W = 320, H = 640, cx = 160, SR = 2;
+    var cv = makeCanvas(W * SR, H * SR);
     var c = cv.getContext('2d');
+    c.scale(SR, SR);
     var R = seeded(8765);
     var u = 26, fy = 96;
     var JD = [46, 52, 32], JM = [91, 100, 64], JL = [126, 138, 92];
@@ -1157,52 +1492,54 @@
   }
 
   // ================================================================== PORTRAIT
-  // Close-up of Manjulika's face for the jumpscare.
+  // Close-up of cartoon Manjulika for the jumpscare.
   function drawGhostPortrait(target, w, h, scream) {
     var cv = makeCanvas(w, h);
     var c = cv.getContext('2d');
-    var R = seeded(555);
-    var u = w * 0.19, cx = w / 2, cy = h * 0.42;
-
-    drawLongHairBack(c, cx, cy, u, h * 1.05, 0, R);
-    // shoulders, blouse and pallu at the bottom
-    c.fillStyle = '#4a0f15';
-    c.beginPath();
-    c.moveTo(cx - 2.9 * u, h);
-    c.quadraticCurveTo(cx - 2.6 * u, cy + 2.5 * u, cx - 0.9 * u, cy + 2.3 * u);
-    c.lineTo(cx + 0.9 * u, cy + 2.3 * u);
-    c.quadraticCurveTo(cx + 2.6 * u, cy + 2.5 * u, cx + 2.9 * u, h);
-    c.closePath();
-    c.fill();
-    c.fillStyle = '#d3ccbc';
-    c.beginPath();
-    c.moveTo(cx - 2.6 * u, cy + 2.6 * u);
-    c.lineTo(cx - 1.4 * u, cy + 2.35 * u);
-    c.lineTo(cx + 1.6 * u, h);
-    c.lineTo(cx + 0.2 * u, h);
-    c.closePath();
-    c.fill();
-    sariBorder(c, [[cx - 1.4 * u, cy + 2.35 * u], [cx + 1.6 * u, h]], 0.18 * u, R);
-    drawNeck(c, cx, cy, u, GHOST_SKIN, true);
-    var eyes = drawFace(c, cx, cy, u, { ghost: true, scream: scream, rand: seeded(77) });
-    drawJhumka(c, cx - eyes.ear, cy + 0.25 * u, u);
-    drawJhumka(c, cx + eyes.ear, cy + 0.25 * u, u);
-    drawLongHairFront(c, cx, cy, u, h, 0, R, true);
-    c.globalCompositeOperation = 'source-atop';
-    c.fillStyle = 'rgba(110,135,170,0.14)';
+    var s = w * 0.2, cx = w / 2, cy = h * 0.42;
+    var glow = c.createRadialGradient(cx, cy, s * 0.5, cx, cy, w * 0.7);
+    glow.addColorStop(0, 'rgba(140,90,255,0.35)');
+    glow.addColorStop(1, 'rgba(140,90,255,0)');
+    c.fillStyle = glow;
     c.fillRect(0, 0, w, h);
-    c.globalCompositeOperation = 'source-over';
-    // glowing pupils
+    drawToonHairBack(c, cx, cy, s, 0.6);
+    // shoulders, blouse and pallu
+    c.beginPath();
+    c.moveTo(cx - 2.6 * s, h + 10);
+    c.quadraticCurveTo(cx - 2.4 * s, cy + 2.4 * s, cx - 0.6 * s, cy + 2.2 * s);
+    c.lineTo(cx + 0.6 * s, cy + 2.2 * s);
+    c.quadraticCurveTo(cx + 2.4 * s, cy + 2.4 * s, cx + 2.6 * s, h + 10);
+    c.closePath();
+    c.fillStyle = TOON.blouse; c.fill(); ink(c, s * 0.06);
+    c.beginPath();
+    c.moveTo(cx - 2.3 * s, cy + 2.5 * s); c.lineTo(cx - 1.2 * s, cy + 2.25 * s); c.lineTo(cx + 1.6 * s, h + 10); c.lineTo(cx + 0.3 * s, h + 10);
+    c.closePath();
+    c.fillStyle = TOON.sari; c.fill(); ink(c, s * 0.05);
+    c.beginPath(); c.moveTo(cx - 1.2 * s, cy + 2.28 * s); c.lineTo(cx + 1.55 * s, h + 10);
+    c.strokeStyle = TOON.border; c.lineWidth = s * 0.14; c.stroke();
+    c.strokeStyle = TOON.gold; c.lineWidth = s * 0.04; c.stroke();
+    // neck, choker
+    c.beginPath();
+    c.moveTo(cx - 0.32 * s, cy + 1.2 * s); c.lineTo(cx - 0.4 * s, cy + 2.3 * s); c.lineTo(cx + 0.4 * s, cy + 2.3 * s); c.lineTo(cx + 0.32 * s, cy + 1.2 * s);
+    c.closePath();
+    c.fillStyle = TOON.skin; c.fill(); ink(c, s * 0.05);
+    c.beginPath(); c.moveTo(cx - 0.4 * s, cy + 1.95 * s); c.quadraticCurveTo(cx, cy + 2.15 * s, cx + 0.4 * s, cy + 1.95 * s);
+    c.strokeStyle = INK; c.lineWidth = s * 0.16; c.stroke();
+    c.strokeStyle = TOON.gold; c.lineWidth = s * 0.11; c.stroke();
+    for (var k = -2; k <= 2; k++) { bead(c, cx + k * 0.15 * s, cy + 2.08 * s + (2 - Math.abs(k)) * 0.03 * s, s * 0.05, k === 0 ? TOON.ruby : '#1e7a46'); }
+    var face = drawToonFace(c, cx, cy, s, scream, 0.6);
+    drawToonJhumka(c, cx - face.ear, cy + 0.15 * s, s, 0.12);
+    drawToonJhumka(c, cx + face.ear, cy + 0.15 * s, s, -0.12);
+    drawToonHairFront(c, cx, cy, s, 0.6);
+    // glowing eyes
     c.save();
     c.shadowColor = '#ff1a2e';
-    c.shadowBlur = u * 0.35;
-    c.fillStyle = 'rgba(255,40,60,0.9)';
+    c.shadowBlur = s * 0.5;
+    c.fillStyle = 'rgba(255,60,80,0.55)';
     for (var i = 0; i < 2; i++) {
-      var e = i === 0 ? eyes.left : eyes.right;
-      c.beginPath(); c.arc(e[0], e[1], u * 0.035, 0, TWO_PI); c.fill();
+      c.beginPath(); c.arc(face.eyes[i][0], face.eyes[i][1], s * 0.12, 0, TWO_PI); c.fill();
     }
     c.restore();
-
     target.clearRect(0, 0, w, h);
     target.drawImage(cv, 0, 0);
   }

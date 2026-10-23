@@ -198,12 +198,12 @@ class Maze:
                 self.remove_wall(r, c, d)
 
     def _carve_growing(self, cells):
-        """Growing tree: half newest-cell (corridors), half random-cell (branches)."""
+        """Growing tree: mostly newest-cell (long corridors), sometimes random (decoy branches)."""
         start = self.rng.choice(cells)
         active = [start]
         visited = {start}
         while active:
-            i = len(active) - 1 if self.rng.random() < 0.5 else self.rng.randrange(len(active))
+            i = len(active) - 1 if self.rng.random() < 0.75 else self.rng.randrange(len(active))
             r, c = active[i]
             choices = [(d, nr, nc) for d, nr, nc in self.neighbours(r, c) if (nr, nc) not in visited]
             if not choices:

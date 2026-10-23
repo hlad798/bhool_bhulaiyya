@@ -33,6 +33,8 @@ body {
     var(--ink);
 }
 
+#bg { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 0; display: block; }
+
 #fog {
   position: fixed; inset: 0; pointer-events: none; z-index: 0;
   background:
@@ -47,7 +49,13 @@ body {
 
 /* ---------------------------------------------------------- title */
 #screen-title { align-items: center; justify-content: center; padding: 16px; overflow-y: auto; }
-.title-wrap { max-width: 640px; text-align: center; padding: 24px 8px; }
+.title-wrap {
+  max-width: 660px; text-align: center; padding: 28px 22px;
+  background: radial-gradient(ellipse at 50% 30%, rgba(30, 8, 14, 0.82), rgba(8, 3, 6, 0.9));
+  border: 1px solid rgba(201, 161, 74, 0.35); border-radius: 6px;
+  box-shadow: 0 0 60px rgba(0, 0, 0, 0.8), 0 0 40px rgba(163, 18, 31, 0.25);
+  backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px);
+}
 .hindi {
   font-family: 'Tiro Devanagari Hindi', serif; font-size: 1.6rem; color: var(--gold);
   letter-spacing: 0.15em; opacity: 0.85;
@@ -118,7 +126,9 @@ h2 {
 /* ---------------------------------------------------------- game */
 #screen-game { flex-direction: column; align-items: center; padding: 10px 12px 12px; gap: 8px; }
 .hud {
-  width: 100%; max-width: 760px; display: flex; align-items: center; gap: 6px;
+  width: 100%; max-width: 980px; border-radius: 6px;
+  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+  box-shadow: 0 6px 30px rgba(0, 0, 0, 0.6); display: flex; align-items: center; gap: 6px;
   padding: 8px 10px; border: 1px solid rgba(201, 161, 74, 0.3);
   background: rgba(20, 8, 9, 0.75); flex-wrap: wrap; justify-content: space-between;
 }
@@ -131,9 +141,10 @@ h2 {
 
 #board-wrap { position: relative; flex: 1; width: 100%; display: flex; align-items: center; justify-content: center; min-height: 0; }
 #board {
-  display: block; border: 2px solid rgba(201, 161, 74, 0.5);
-  box-shadow: 0 0 40px rgba(163, 18, 31, 0.35), inset 0 0 30px #000;
-  background: #000;
+  display: block; background: #000; border-radius: 4px;
+  border: 3px solid rgba(201, 161, 74, 0.75);
+  outline: 1px solid rgba(201, 161, 74, 0.35); outline-offset: 6px;
+  box-shadow: 0 0 0 10px rgba(10, 4, 6, 0.85), 0 0 70px rgba(0, 0, 0, 0.95), 0 0 45px rgba(163, 18, 31, 0.35);
 }
 #board-wrap.shake { animation: shake 0.18s infinite; }
 @keyframes shake {

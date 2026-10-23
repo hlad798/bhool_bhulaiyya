@@ -324,27 +324,74 @@
       this.playBuffer(this.heartDub, vol, { when: t + gap });
     },
 
-    ghungroo: function (vol, pan) {
-      if (!this.ctx || !this.bells.length) { return; }
-      var buf = this.bells[Math.floor(Math.random() * this.bells.length)];
-      this.playBuffer(buf, vol, {
-        rate: 0.93 + Math.random() * 0.14,
-        pan: typeof pan === 'number' ? pan : 0,
-        wet: 0.7
-      });
+    // HER heartbeat: a second, deeper and heavier lub-dub that comes from
+    // her side of the screen and pounds louder with every step she takes
+    // towards you.
+    herBeat: function (vol, pan) {
+      if (!this.ctx) { return; }
+      var t = this.ctx.currentTime + 0.01;
+      var opts = { when: t, rate: 0.62, pan: typeof pan === 'number' ? pan : 0, wet: 0.9, lowpass: 420 };
+      this.playBuffer(this.heartLub, vol, opts);
+      opts.when = t + 0.17;
+      opts.rate = 0.66;
+      this.playBuffer(this.heartDub, vol * 0.85, opts);
+    },
+
+    // distant thunder rolling over the haveli
+    thunder: function () {
+      var c = this.ctx;
+      var t = c.currentTime + 0.25 + Math.random() * 0.4;
+      var n = this.noise();
+      var lp = c.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 160;
+      var g = c.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.5, t + 0.15);
+      g.gain.exponentialRampToValueAtTime(0.18, t + 1.0);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 3.2);
+      n.connect(lp); lp.connect(g); g.connect(this.musicBus || this.master);
+      var send = c.createGain(); send.gain.value = 0.6;
+      g.connect(send); send.connect(this.reverb);
+      n.start(t); n.stop(t + 3.3);
+    },
+
+    // a heavy, sudden hit: a sub drop with a burst of rubble noise
+    boom: function (vol) {
+      if (!this.ctx) { return; }
+      var c = this.ctx;
+      var t = c.currentTime + 0.01;
+      var o = c.createOscillator();
+      o.type = 'sine';
+      o.frequency.setValueAtTime(110, t);
+      o.frequency.exponentialRampToValueAtTime(28, t + 1.2);
+      var g = c.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(vol, t + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 1.8);
+      var drive = this.distortion(25);
+      o.connect(drive); drive.connect(g); g.connect(this.master);
+      var send = c.createGain(); send.gain.value = 0.8;
+      g.connect(send); send.connect(this.reverb);
+      o.start(t); o.stop(t + 1.9);
+      var n = this.noise();
+      var lp = c.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 900;
+      var ng = c.createGain();
+      ng.gain.setValueAtTime(vol * 0.8, t);
+      ng.gain.exponentialRampToValueAtTime(0.0001, t + 0.6);
+      n.connect(lp); lp.connect(ng); ng.connect(this.master);
+      n.start(t); n.stop(t + 0.65);
     },
 
     // ------------------------------------------------------------ ambience
     // Deep-ocean horror ambience: a pressure rumble and a sub drone underneath,
     // with now and then a whale-like moan from the deep, a sonar ping, creaking
     // timbers, water dripping, a distant temple bell, and a faint wordless
-    // woman's hum drifting through the halls. All quiet, so the heartbeat and
-    // the ghungroo cut through.
+    // woman's hum drifting through the halls, over a groaning rumble and an
+    // uneasy dissonant hum. It ducks when she is near, so both heartbeats cut through.
     startDrone: function () {
       if (!this.ctx || this.droneOn) { return; }
       this.droneOn = true;
       var c = this.ctx;
-      this.musicLevel = 0.4;
+      this.musicLevel = 0.5;
       this.musicBus = c.createGain();
       this.musicBus.gain.value = this.musicLevel;
       this.musicBus.connect(this.master);
@@ -352,16 +399,16 @@
       // pressure rumble, swelling slowly like the sea
       var rum = this.noise();
       var rlp = c.createBiquadFilter(); rlp.type = 'lowpass'; rlp.frequency.value = 110; rlp.Q.value = 0.8;
-      var rg = c.createGain(); rg.gain.value = 0.22;
+      var rg = c.createGain(); rg.gain.value = 0.5;
       var swell = c.createOscillator(); swell.frequency.value = 0.06;
-      var swellDepth = c.createGain(); swellDepth.gain.value = 0.14;
+      var swellDepth = c.createGain(); swellDepth.gain.value = 0.32;
       swell.connect(swellDepth); swellDepth.connect(rg.gain);
       rum.connect(rlp); rlp.connect(rg); rg.connect(this.musicBus);
       rum.start(); swell.start();
 
       // sub drone, two notes beating slowly against each other
       var dlp = c.createBiquadFilter(); dlp.type = 'lowpass'; dlp.frequency.value = 220;
-      var dg = c.createGain(); dg.gain.value = 0.045;
+      var dg = c.createGain(); dg.gain.value = 0.08;
       dlp.connect(dg); dg.connect(this.musicBus);
       var freqs = [43.65, 44.1, 87.3];
       for (var i = 0; i < freqs.length; i++) {
@@ -372,6 +419,36 @@
         o.connect(og); og.connect(dlp);
         o.start();
       }
+
+      // a second, deeper rumble - the haveli groaning under pressure
+      var rum2 = this.noise();
+      var r2lp = c.createBiquadFilter(); r2lp.type = 'lowpass'; r2lp.frequency.value = 55; r2lp.Q.value = 2.5;
+      var r2g = c.createGain(); r2g.gain.value = 0.6;
+      var r2swell = c.createOscillator(); r2swell.frequency.value = 0.023;
+      var r2depth = c.createGain(); r2depth.gain.value = 0.45;
+      r2swell.connect(r2depth); r2depth.connect(r2g.gain);
+      rum2.connect(r2lp); r2lp.connect(r2g); r2g.connect(this.musicBus);
+      rum2.start(); r2swell.start();
+
+      // an uneasy, dissonant cluster - two notes a semitone apart, trembling
+      var cl = c.createGain(); cl.gain.value = 0.035;
+      var trem = c.createOscillator(); trem.frequency.value = 0.31;
+      var tremDepth = c.createGain(); tremDepth.gain.value = 0.02;
+      trem.connect(tremDepth); tremDepth.connect(cl.gain);
+      var cluster = [110, 116.54, 164.81];
+      for (var ci = 0; ci < cluster.length; ci++) {
+        var co = c.createOscillator();
+        co.type = 'triangle';
+        co.frequency.value = cluster[ci];
+        co.detune.value = (Math.random() - 0.5) * 12;
+        co.connect(cl);
+        co.start();
+      }
+      var clp = c.createBiquadFilter(); clp.type = 'lowpass'; clp.frequency.value = 600;
+      cl.connect(clp); clp.connect(this.musicBus);
+      var cls = c.createGain(); cls.gain.value = 1.2;
+      clp.connect(cls); cls.connect(this.reverb);
+      trem.start();
 
       // muffled, underwater hiss
       var hiss = this.noise();
@@ -395,6 +472,7 @@
       this.nextHum = now + 16;
       this.nextBell = now + 24;
       this.nextDrip = now + 2;
+      this.nextScrape = now + 9;
       var self = this;
       if (!this.fixedCtx) {
         this.musicTimer = setInterval(function () { self.scheduleMusic(); }, 200);
@@ -403,7 +481,8 @@
 
     scheduleMusic: function () {
       var soon = this.ctx.currentTime + 0.4;
-      if (this.nextMoan < soon) { this.moan(this.nextMoan); this.nextMoan += 9 + Math.random() * 8; }
+      if (this.nextMoan < soon) { this.moan(this.nextMoan); this.nextMoan += 6 + Math.random() * 6; }
+      if (this.nextScrape < soon) { this.scrape(this.nextScrape); this.nextScrape += 13 + Math.random() * 12; }
       if (this.nextPing < soon) { this.sonar(this.nextPing); this.nextPing += 14 + Math.random() * 12; }
       if (this.nextCreak < soon) {
         this.playBuffer(this.creaks[Math.floor(Math.random() * this.creaks.length)], 0.3,
@@ -460,6 +539,30 @@
       o.connect(f1); o.connect(f2); f1.connect(lp); f2.connect(lp); lp.connect(g);
       this.toMusic(g, Math.random() * 1.4 - 0.7, 1.4);
       o.start(t0); o.stop(t0 + dur + 0.05);
+    },
+
+    // something metal being dragged slowly across stone, far away
+    scrape: function (t0) {
+      var c = this.ctx;
+      var dur = 2.5 + Math.random() * 2;
+      var n = this.noise();
+      var g = c.createGain();
+      g.gain.setValueAtTime(0, t0);
+      g.gain.linearRampToValueAtTime(0.5, t0 + dur * 0.4);
+      g.gain.linearRampToValueAtTime(0, t0 + dur);
+      var bands = [1700 + Math.random() * 400, 2600 + Math.random() * 500, 3900];
+      var mixer = c.createGain(); mixer.gain.value = 1;
+      for (var k = 0; k < bands.length; k++) {
+        var bp = c.createBiquadFilter();
+        bp.type = 'bandpass';
+        bp.Q.value = 28;
+        bp.frequency.setValueAtTime(bands[k], t0);
+        bp.frequency.linearRampToValueAtTime(bands[k] * (0.85 + Math.random() * 0.3), t0 + dur);
+        n.connect(bp); bp.connect(mixer);
+      }
+      mixer.connect(g);
+      this.toMusic(g, Math.random() * 1.6 - 0.8, 1.6);
+      n.start(t0); n.stop(t0 + dur + 0.05);
     },
 
     // a sonar ping, sometimes answered by a second one
@@ -623,7 +726,7 @@
     },
 
     // closeness 0..1: the music ducks and a low pulse rises as she nears,
-    // so the heartbeat and the ghungroo stand out.
+    // so the two heartbeats stand out.
     setTension: function (t) {
       if (!this.musicBus) { return; }
       var now = this.ctx.currentTime;
@@ -848,6 +951,7 @@
     Sound.resume();
     Sound.startDrone();
     state.total = 0;
+    Backdrop.dim = 0.45;
     showScreen('screen-game');
     loadLevel(1);
   }
@@ -900,6 +1004,7 @@
     state.paused = false;
     state.question = null;
     state.blocked = data.blocked;
+    Backdrop.tint = (THEMES[data.config.theme] || THEMES.sandstone).vig;
     state.decor = makeDecor(data);
     state.staticDirty = true;
 
@@ -960,7 +1065,7 @@
     state.heldDir = null;
     $('modal-question').classList.remove('show');
     $('board-wrap').classList.remove('shake');
-    Sound.scream(1.0, 3.6, { wet: 0.6 });
+    Sound.boom(1.0);
     startScare();
     setTimeout(function () {
       stopScare();
@@ -982,6 +1087,7 @@
 
   function goHome() {
     state.running = false;
+    Backdrop.dim = 0;
     showScreen('screen-title');
   }
 
@@ -1007,7 +1113,7 @@
       })(q.options[i]);
     }
     $('modal-question').classList.add('show');
-    Sound.ghungroo(0.55, ghostPan());
+    Sound.herBeat(0.45, ghostPan());
   }
 
   function setOptionsDisabled(flag) {
@@ -1148,9 +1254,9 @@
     }
     state.distMap = bfsFromPlayer();
     state.dist = state.distMap[g.r * cols + g.c];
-    // Her anklet bells ring with every step - louder as she gets closer.
+    // Her heartbeat pounds with every step - louder as she gets closer.
     if (state.dist <= 18) {
-      Sound.ghungroo(0.03 + Math.pow((18 - state.dist) / 18, 1.8) * 1.0, ghostPan());
+      Sound.herBeat(0.05 + Math.pow((18 - state.dist) / 18, 1.6) * 1.1, ghostPan());
     }
   }
 
@@ -1214,7 +1320,7 @@
       $('hud-ghost').classList.remove('awake');
       if (g.wakeIn <= 0) {
         g.awake = true;
-        Sound.scream(0.32, 2.6, { wet: 1.4, pitch: 0.82 });
+        Sound.boom(0.45);
         whisper(pick(state.data.whispers.awake));
         state.whisperAcc = 0;
       }
@@ -1264,15 +1370,16 @@
   function resize() {
     if (!state.rows) { return; }
     var wrap = $('board-wrap');
-    var aw = Math.min(wrap.clientWidth - 8, 1100);
-    var ah = wrap.clientHeight - 8;
+    var aw = Math.min(wrap.clientWidth - 28, 1500);
+    var ah = wrap.clientHeight - 28;
     var cell = Math.max(8, Math.floor(Math.min(aw / (state.cols + 0.9), ah / (state.rows + 0.9))));
     var m = Math.round(cell * 0.45);
     state.cell = cell;
     state.margin = m;
     state.pw = cell * state.cols + 2 * m;
     state.ph = cell * state.rows + 2 * m;
-    state.dpr = window.devicePixelRatio || 1;
+    // render at least at 2x (up to 3x) for crisp, high-resolution graphics
+    state.dpr = Math.min(3, Math.max(2, window.devicePixelRatio || 1));
     var w = Math.round(state.pw * state.dpr), h = Math.round(state.ph * state.dpr);
     canvas.width = w; canvas.height = h;
     canvas.style.width = state.pw + 'px';
@@ -1806,9 +1913,9 @@
     sc.height = Math.round(window.innerHeight * dpr);
     if (!scare.img) {
       scare.img = document.createElement('canvas');
-      scare.img.width = 1000;
-      scare.img.height = 1000;
-      window.BBChars.drawGhostPortrait(scare.img.getContext('2d'), 1000, 1000, true);
+      scare.img.width = 1600;
+      scare.img.height = 1600;
+      window.BBChars.drawGhostPortrait(scare.img.getContext('2d'), 1600, 1600, true);
     }
     scare.start = performance.now();
     scare.running = true;
@@ -1874,12 +1981,259 @@
     requestAnimationFrame(scareFrame);
   }
 
+  // ================================================================== BACKDROP
+  // The animated scene behind everything: a blood-tinged night sky, a huge
+  // moon with clouds sliding over it, the silhouette of the haveli with its
+  // domes and a few lit windows, dead trees, bats, rolling fog, and lightning.
+  var Backdrop = {
+    cv: null, c: null, scene: null, fogTex: null,
+    w: 0, h: 0, dpr: 1, bats: [], clouds: [], flash: 0, nextFlash: 8, dim: 0, tint: [130, 12, 16],
+
+    init: function () {
+      this.cv = document.getElementById('bg');
+      if (!this.cv) { return; }
+      this.c = this.cv.getContext('2d');
+      var R = seededRandom(20261023);
+      for (var k = 0; k < 9; k++) {
+        this.bats.push({ x: R(), y: 0.08 + R() * 0.35, v: 0.012 + R() * 0.03, size: 6 + R() * 10, phase: R() * 10, dir: R() < 0.5 ? -1 : 1, bob: R() * 6 });
+      }
+      for (k = 0; k < 5; k++) {
+        this.clouds.push({ x: R(), y: 0.08 + R() * 0.28, w: 0.25 + R() * 0.3, v: 0.004 + R() * 0.006, a: 0.5 + R() * 0.4 });
+      }
+      this.fogTex = this.makeFog();
+      this.resize();
+    },
+
+    resize: function () {
+      if (!this.cv) { return; }
+      this.dpr = Math.min(2, window.devicePixelRatio || 1);
+      this.w = window.innerWidth;
+      this.h = window.innerHeight;
+      this.cv.width = Math.round(this.w * this.dpr);
+      this.cv.height = Math.round(this.h * this.dpr);
+      this.scene = this.paintScene();
+    },
+
+    makeFog: function () {
+      var cv = document.createElement('canvas');
+      cv.width = 1024; cv.height = 256;
+      var c = cv.getContext('2d');
+      var R = seededRandom(77);
+      for (var k = 0; k < 70; k++) {
+        var x = R() * 1024, y = 90 + R() * 150, r = 40 + R() * 90;
+        for (var dx = -1024; dx <= 1024; dx += 1024) {
+          var g = c.createRadialGradient(x + dx, y, 0, x + dx, y, r);
+          g.addColorStop(0, 'rgba(190,180,200,0.10)');
+          g.addColorStop(1, 'rgba(190,180,200,0)');
+          c.fillStyle = g;
+          c.beginPath(); c.arc(x + dx, y, r, 0, TWO_PI); c.fill();
+        }
+      }
+      return cv;
+    },
+
+    // a dead tree, drawn as recursive branches
+    tree: function (c, x, y, len, ang, width, depth, R) {
+      if (depth <= 0 || len < 4) { return; }
+      var x2 = x + Math.cos(ang) * len, y2 = y + Math.sin(ang) * len;
+      c.strokeStyle = '#040206';
+      c.lineWidth = width;
+      c.lineCap = 'round';
+      c.beginPath();
+      c.moveTo(x, y);
+      c.quadraticCurveTo((x + x2) / 2 + (R() - 0.5) * len * 0.3, (y + y2) / 2, x2, y2);
+      c.stroke();
+      var n = 2 + (R() < 0.35 ? 1 : 0);
+      for (var k = 0; k < n; k++) {
+        this.tree(c, x2, y2, len * (0.62 + R() * 0.18), ang + (R() - 0.5) * 1.2, width * 0.65, depth - 1, R);
+      }
+    },
+
+    paintScene: function () {
+      var w = this.w, h = this.h;
+      var cv = document.createElement('canvas');
+      cv.width = Math.round(w * this.dpr); cv.height = Math.round(h * this.dpr);
+      var c = cv.getContext('2d');
+      c.scale(this.dpr, this.dpr);
+      var R = seededRandom(1993);
+      var k;
+      // sky
+      var sky = c.createLinearGradient(0, 0, 0, h);
+      sky.addColorStop(0, '#05030a');
+      sky.addColorStop(0.45, '#160a1c');
+      sky.addColorStop(0.75, '#2b0d16');
+      sky.addColorStop(1, '#0a0406');
+      c.fillStyle = sky;
+      c.fillRect(0, 0, w, h);
+      for (k = 0; k < 140; k++) {
+        c.fillStyle = 'rgba(255,240,230,' + (0.15 + R() * 0.5) + ')';
+        c.fillRect(R() * w, R() * h * 0.55, R() < 0.9 ? 1 : 2, R() < 0.9 ? 1 : 2);
+      }
+      // moon with a sickly halo and craters
+      var mr = Math.min(w, h) * 0.11, mx = w * 0.8, my = h * 0.2;
+      var halo = c.createRadialGradient(mx, my, mr * 0.8, mx, my, mr * 4.5);
+      halo.addColorStop(0, 'rgba(255,190,170,0.35)');
+      halo.addColorStop(0.4, 'rgba(160,40,60,0.12)');
+      halo.addColorStop(1, 'rgba(160,40,60,0)');
+      c.fillStyle = halo;
+      c.fillRect(0, 0, w, h);
+      var mg = c.createRadialGradient(mx - mr * 0.3, my - mr * 0.3, mr * 0.1, mx, my, mr);
+      mg.addColorStop(0, '#fff6e2');
+      mg.addColorStop(0.7, '#ecd9bd');
+      mg.addColorStop(1, '#c9a98e');
+      c.fillStyle = mg;
+      c.beginPath(); c.arc(mx, my, mr, 0, TWO_PI); c.fill();
+      for (k = 0; k < 9; k++) {
+        var ca = R() * TWO_PI, cd = R() * mr * 0.7;
+        c.fillStyle = 'rgba(150,120,100,0.25)';
+        c.beginPath(); c.arc(mx + Math.cos(ca) * cd, my + Math.sin(ca) * cd, mr * (0.06 + R() * 0.12), 0, TWO_PI); c.fill();
+      }
+      // distant hills
+      c.fillStyle = '#12070d';
+      c.beginPath();
+      c.moveTo(0, h * 0.72);
+      for (var x = 0; x <= w; x += w / 12) { c.lineTo(x, h * (0.66 + R() * 0.06)); }
+      c.lineTo(w, h); c.lineTo(0, h); c.closePath(); c.fill();
+      // the haveli silhouette
+      var base = h * 0.86, hw = Math.min(w * 0.7, h * 1.3), hx = w * 0.5 - hw / 2;
+      c.fillStyle = '#07030a';
+      c.fillRect(hx, base - hw * 0.22, hw, hw * 0.22 + h);
+      // central tower and big dome with a finial
+      var tx = w * 0.5, tw = hw * 0.22;
+      c.fillRect(tx - tw / 2, base - hw * 0.36, tw, hw * 0.2);
+      c.beginPath();
+      c.moveTo(tx - tw * 0.48, base - hw * 0.36);
+      c.bezierCurveTo(tx - tw * 0.6, base - hw * 0.5, tx - tw * 0.1, base - hw * 0.52, tx, base - hw * 0.58);
+      c.bezierCurveTo(tx + tw * 0.1, base - hw * 0.52, tx + tw * 0.6, base - hw * 0.5, tx + tw * 0.48, base - hw * 0.36);
+      c.closePath(); c.fill();
+      c.fillRect(tx - 1.5, base - hw * 0.64, 3, hw * 0.07);
+      // side chhatris (small domed pavilions)
+      var spots = [0.12, 0.3, 0.7, 0.88];
+      for (k = 0; k < spots.length; k++) {
+        var cxp = hx + hw * spots[k], cw2 = hw * 0.07, ctop = base - hw * 0.22;
+        c.fillRect(cxp - cw2 / 2, ctop - hw * 0.07, cw2, hw * 0.07);
+        c.beginPath();
+        c.moveTo(cxp - cw2 * 0.6, ctop - hw * 0.07);
+        c.quadraticCurveTo(cxp, ctop - hw * 0.16, cxp + cw2 * 0.6, ctop - hw * 0.07);
+        c.closePath(); c.fill();
+        c.fillRect(cxp - 1, ctop - hw * 0.18, 2, hw * 0.03);
+      }
+      // rows of arched windows: most dark, a few lit, one with a figure
+      var rows2 = 2, cols2 = 11;
+      for (var rr = 0; rr < rows2; rr++) {
+        for (var cc = 0; cc < cols2; cc++) {
+          var wx = hx + hw * (0.06 + cc * 0.088), wy = base - hw * (0.18 - rr * 0.09);
+          var ww = hw * 0.035, wh = hw * 0.055;
+          var lit = R() < 0.18;
+          c.fillStyle = lit ? 'rgba(255,150,60,0.85)' : '#1c0d18';
+          c.beginPath();
+          c.moveTo(wx - ww / 2, wy + wh / 2);
+          c.lineTo(wx - ww / 2, wy - wh * 0.1);
+          c.arc(wx, wy - wh * 0.1, ww / 2, Math.PI, 0);
+          c.lineTo(wx + ww / 2, wy + wh / 2);
+          c.closePath(); c.fill();
+          if (lit && R() < 0.5) {
+            c.fillStyle = '#07030a';
+            c.beginPath(); c.arc(wx, wy - wh * 0.05, ww * 0.16, 0, TWO_PI); c.fill();
+            c.fillRect(wx - ww * 0.18, wy + wh * 0.05, ww * 0.36, wh * 0.45);
+          }
+        }
+      }
+      // dead trees framing the scene
+      this.tree(c, w * 0.04, h * 1.02, h * 0.2, -Math.PI / 2 + 0.12, Math.max(6, h * 0.018), 7, R);
+      this.tree(c, w * 0.97, h * 1.02, h * 0.22, -Math.PI / 2 - 0.15, Math.max(6, h * 0.02), 7, R);
+      // ground
+      c.fillStyle = '#030104';
+      c.fillRect(0, h * 0.95, w, h * 0.05);
+      return cv;
+    },
+
+    drawBat: function (c, x, y, s, flap) {
+      var wing = Math.sin(flap) * 0.8;
+      c.fillStyle = '#020103';
+      c.beginPath();
+      c.moveTo(x, y);
+      c.quadraticCurveTo(x - s * 0.6, y - s * (0.6 + wing), x - s * 1.4, y - s * wing * 0.6);
+      c.quadraticCurveTo(x - s * 0.9, y + s * 0.1, x - s * 0.7, y + s * 0.3);
+      c.quadraticCurveTo(x - s * 0.4, y + s * 0.05, x, y + s * 0.3);
+      c.quadraticCurveTo(x + s * 0.4, y + s * 0.05, x + s * 0.7, y + s * 0.3);
+      c.quadraticCurveTo(x + s * 0.9, y + s * 0.1, x + s * 1.4, y - s * wing * 0.6);
+      c.quadraticCurveTo(x + s * 0.6, y - s * (0.6 + wing), x, y);
+      c.fill();
+      c.beginPath(); c.arc(x, y + s * 0.1, s * 0.22, 0, TWO_PI); c.fill();
+    },
+
+    frame: function (t, dt) {
+      if (!this.cv || !this.scene) { return; }
+      var c = this.c, w = this.w, h = this.h, k;
+      c.setTransform(1, 0, 0, 1, 0, 0);
+      c.drawImage(this.scene, 0, 0);
+      c.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+      // clouds drifting across the moon
+      for (k = 0; k < this.clouds.length; k++) {
+        var cl = this.clouds[k];
+        cl.x += cl.v * dt;
+        if (cl.x > 1.3) { cl.x = -0.4; }
+        var cx = cl.x * w, cy = cl.y * h, cw = cl.w * w;
+        for (var p = 0; p < 5; p++) {
+          var g = c.createRadialGradient(cx + p * cw * 0.18, cy + Math.sin(p) * 8, 0, cx + p * cw * 0.18, cy + Math.sin(p) * 8, cw * 0.22);
+          g.addColorStop(0, 'rgba(18,8,18,' + (cl.a * 0.8) + ')');
+          g.addColorStop(1, 'rgba(18,8,18,0)');
+          c.fillStyle = g;
+          c.fillRect(cx + p * cw * 0.18 - cw * 0.22, cy - cw * 0.22, cw * 0.44, cw * 0.44);
+        }
+      }
+      // bats
+      for (k = 0; k < this.bats.length; k++) {
+        var b = this.bats[k];
+        b.x += b.v * b.dir * dt;
+        if (b.x > 1.1) { b.x = -0.1; }
+        if (b.x < -0.1) { b.x = 1.1; }
+        this.drawBat(c, b.x * w, b.y * h + Math.sin(t * 1.5 + b.phase) * b.bob, b.size, t * 14 + b.phase);
+      }
+      // rolling fog near the ground, tinted with this level's colour
+      var fw = Math.max(w, 1024);
+      for (k = 0; k < 2; k++) {
+        var off = ((t * (12 + k * 9)) % fw);
+        c.globalAlpha = 0.9 - k * 0.3;
+        c.drawImage(this.fogTex, -off, h * (0.62 + k * 0.12), fw, h * 0.32);
+        c.drawImage(this.fogTex, fw - off, h * (0.62 + k * 0.12), fw, h * 0.32);
+      }
+      c.globalAlpha = 1;
+      var tg = c.createLinearGradient(0, h * 0.5, 0, h);
+      tg.addColorStop(0, 'rgba(0,0,0,0)');
+      tg.addColorStop(1, 'rgba(' + this.tint[0] + ',' + this.tint[1] + ',' + this.tint[2] + ',0.22)');
+      c.fillStyle = tg;
+      c.fillRect(0, h * 0.5, w, h * 0.5);
+      // lightning
+      this.nextFlash -= dt;
+      if (this.nextFlash <= 0) {
+        this.flash = 1;
+        this.nextFlash = 12 + Math.random() * 14;
+        if (Sound.ctx && Sound.droneOn) { Sound.thunder(); }
+      }
+      if (this.flash > 0) {
+        var f = this.flash;
+        var a = f > 0.7 ? 0.55 : (f > 0.55 ? 0.1 : (f > 0.4 ? 0.35 : f * 0.4));
+        c.fillStyle = 'rgba(220,215,255,' + a + ')';
+        c.fillRect(0, 0, w, h);
+        this.flash -= dt * 1.6;
+      }
+      // darken behind the game so the maze stands out
+      if (this.dim > 0) {
+        c.fillStyle = 'rgba(0,0,0,' + this.dim + ')';
+        c.fillRect(0, 0, w, h);
+      }
+    }
+  };
+
   // ================================================================== LOOP
   var last = 0;
   function loop(ts) {
     var dt = last ? Math.min(0.05, (ts - last) / 1000) : 0;
     last = ts;
     state.clock = ts / 1000;
+    Backdrop.frame(state.clock, dt);
     if (state.data) {
       update(dt);
       render(state.clock);
@@ -1978,7 +2332,8 @@
     var muted = Sound.toggleMute();
     $('btn-mute').innerHTML = muted ? '&#128263;' : '&#128264;';
   });
-  window.addEventListener('resize', resize);
+  window.addEventListener('resize', function () { resize(); Backdrop.resize(); });
+  Backdrop.init();
 
   requestAnimationFrame(loop);
 })();

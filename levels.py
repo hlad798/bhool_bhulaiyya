@@ -13,27 +13,29 @@ As you go deeper:
 MAX_LEVEL = 20
 
 # name, shape, carving algorithm, how many extra loops (braid)
+# 'dfs' and 'growing' carve long, twisting corridors with lots of tempting
+# side branches, so the way out is hard to spot. Only a few loops are added.
 LEVELS = [
-    ('The Moonlit Courtyard',        'full',      'dfs',     0.12),
-    ('The Servants\' Passage',       'full',      'prim',    0.08),
-    ('The Tulsi Courtyard',          'courtyard', 'dfs',     0.10),
-    ('The Hall of Broken Mirrors',   'full',      'kruskal', 0.08),
-    ('The Crossroads of Whispers',   'cross',     'growing', 0.08),
-    ('The Diamond Durbar',           'diamond',   'dfs',     0.10),
-    ('The Hall of Pillars',          'pillared',  'prim',    0.06),
-    ('The Zenana Wing',              'courtyard', 'kruskal', 0.08),
-    ('The Round Baoli',              'circle',    'dfs',     0.09),
-    ('The Twin Courtyards',          'twin',      'growing', 0.08),
-    ('The Locked East Wing',         'cross',     'prim',    0.06),
-    ('The Dancing Hall',             'pillared',  'dfs',     0.07),
-    ('The Mirror Diamond',           'diamond',   'kruskal', 0.06),
-    ('The Haunted Jharokhas',        'courtyard', 'growing', 0.06),
-    ('The Well of Echoes',           'circle',    'prim',    0.05),
-    ('The Forbidden Third Floor',    'twin',      'dfs',     0.06),
-    ('The Burnt Library',            'cross',     'kruskal', 0.05),
-    ('The Altar of Ghungroos',       'diamond',   'growing', 0.05),
-    ('The Sealed Chambers',          'courtyard', 'prim',    0.04),
-    ('The Chamber of Manjulika',     'full',      'dfs',     0.04),
+    ('The Moonlit Courtyard',        'full',      'dfs',     0.06),
+    ('The Servants\' Passage',       'full',      'growing', 0.05),
+    ('The Tulsi Courtyard',          'courtyard', 'dfs',     0.05),
+    ('The Hall of Broken Mirrors',   'full',      'growing', 0.05),
+    ('The Crossroads of Whispers',   'cross',     'dfs',     0.05),
+    ('The Diamond Durbar',           'diamond',   'dfs',     0.05),
+    ('The Hall of Pillars',          'pillared',  'growing', 0.04),
+    ('The Zenana Wing',              'courtyard', 'dfs',     0.04),
+    ('The Round Baoli',              'circle',    'dfs',     0.04),
+    ('The Twin Courtyards',          'twin',      'growing', 0.04),
+    ('The Locked East Wing',         'cross',     'dfs',     0.04),
+    ('The Dancing Hall',             'pillared',  'dfs',     0.04),
+    ('The Mirror Diamond',           'diamond',   'growing', 0.03),
+    ('The Haunted Jharokhas',        'courtyard', 'dfs',     0.03),
+    ('The Well of Echoes',           'circle',    'growing', 0.03),
+    ('The Forbidden Third Floor',    'twin',      'dfs',     0.03),
+    ('The Burnt Library',            'cross',     'dfs',     0.03),
+    ('The Altar of Ghungroos',       'diamond',   'dfs',     0.03),
+    ('The Sealed Chambers',          'courtyard', 'growing', 0.02),
+    ('The Chamber of Manjulika',     'full',      'dfs',     0.02),
 ]
 
 # A different colour for the stone every level (the browser knows how to paint each one)
@@ -76,9 +78,9 @@ def level_config(level):
     step = level - 1
     name, shape, algorithm, braid = LEVELS[step]
 
-    rows = 9 + round(step * 12 / 19)          # 9 rows -> 21 rows
+    rows = 11 + round(step * 14 / 19)         # 11 rows -> 25 rows
     if shape in ('full', 'courtyard', 'twin', 'pillared'):
-        cols = rows + 2 + (step // 5) * 2      # wider halls as you go deeper
+        cols = rows + 4 + (step // 4) * 2      # wider halls as you go deeper
     else:
         cols = rows
 
@@ -99,7 +101,7 @@ def level_config(level):
         'cols': cols,
         'player_speed': 6.5,                                     # cells per second
         'ghost_speed': round(1.4 + step * 0.17, 2),              # 1.4 -> 4.6 cells per second
-        'wake_delay': round(max(2.0, 12.0 - step * 0.55), 2),    # 12 s -> 2 s head start
+        'wake_delay': round(max(1.0, 5.0 - step * 0.21), 2),     # 5 s -> 1 s head start
         'question_time': 10,                                     # 10 seconds to answer, every level
         'light_radius': round(3.6 - step * 0.065, 2),            # lantern radius in cells
         'braid': braid,
