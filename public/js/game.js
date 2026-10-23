@@ -1600,6 +1600,12 @@
   function resize() {
     if (!state.rows) { return; }
     var wrap = $('board-wrap');
+    // on phones (when the arrow buttons are showing) the maze area is shrunk to
+    // fit the maze afterwards, so the buttons sit right under it, not at the very bottom
+    var dpad = $('dpad');
+    var phone = dpad && window.getComputedStyle(dpad).display !== 'none';
+    wrap.style.flex = '';
+    wrap.style.height = '';
     var aw = Math.min(wrap.clientWidth - 28, 1500);
     var ah = wrap.clientHeight - 28;
     var cell = Math.max(8, Math.floor(Math.min(aw / (state.cols + 0.9), ah / (state.rows + 0.9))));
@@ -1616,6 +1622,16 @@
     canvas.style.height = state.ph + 'px';
     staticLayer.width = w; staticLayer.height = h;
     fogLayer.width = w; fogLayer.height = h;
+    if (phone) {
+      wrap.style.flex = '0 0 auto';
+      wrap.style.height = (state.ph + 16) + 'px';
+      // the buttons sit in the middle of the space left below the maze
+      dpad.style.flex = '1';
+      dpad.style.justifyContent = 'center';
+    } else if (dpad) {
+      dpad.style.flex = '';
+      dpad.style.justifyContent = '';
+    }
     placeBoardFx();
     state.staticDirty = true;
   }
