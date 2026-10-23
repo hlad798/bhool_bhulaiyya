@@ -18,7 +18,7 @@ from flask import Flask, jsonify, render_template, request
 
 from levels import MAX_LEVEL, WHISPERS, level_config, rank_title, score_level
 from maze import DIR_NAME, Maze
-from questions import check_answer, select_questions
+from questions import check_answer, pick_question, select_questions
 
 # static_folder is only used for local runs; on Vercel the public/ folder is served by the CDN.
 app = Flask(__name__, static_folder='public', static_url_path='')
@@ -47,15 +47,17 @@ def get_level(level):
                 shape=cfg['shape'], algorithm=cfg['algorithm'])
     dist_to_exit = maze.distances(maze.exit)
     dead = maze.dead_ends()
-    questions = select_questions(len(dead), cfg['tiers'], rng)
 
+    # The riddle for each dead end is chosen when the player reaches it (see
+    # /api/question), so no riddle repeats during a session. A fallback riddle
+    # is still included for any browser still running an older copy of the game.
+    fallback = select_questions(len(dead), cfg['tiers'], rng)
     dead_ends = []
-    for (r, c), q in zip(dead, questions):
+    for (r, c), q in zip(dead, fallback):
         wall = maze.breakable_wall(r, c, dist_to_exit)
         if wall is None:
             continue
-        dead_ends.append({'r': r, 'c': c, 'breakWall': wall,
-                          'breakDir': DIR_NAME[wall], 'question': q})
+        dead_ends.append({'r': r, 'c': c, 'breakWall': wall, 'breakDir': DIR_NAME[wall], 'question': q})
 
     return jsonify({
         'seed': seed,
@@ -71,6 +73,24 @@ def get_level(level):
         'deadEnds': dead_ends,
         'whispers': WHISPERS,
     })
+
+
+@app.route('/api/question', methods=['POST'])
+def question():
+    """A riddle for the dead end the player just reached. The browser sends the ids
+    it has already been asked this session; none of those comes back until the whole
+    bank has been used (then 'reset' tells the browser to start its list again)."""
+    data = request.get_json(silent=True) or {}
+    try:
+        level = int(data.get('level', 1))
+    except (TypeError, ValueError):
+        level = 1
+    seen = data.get('seen') or []
+    if not isinstance(seen, list):
+        seen = []
+    cfg = level_config(level)
+    q, reset = pick_question(cfg['tiers'], seen[:500], random.Random())
+    return jsonify({'question': q, 'reset': reset})
 
 
 @app.route('/api/answer', methods=['POST'])
