@@ -256,3 +256,9 @@ h2 {
   0% { background-position: 0 0; } 20% { background-position: -40px 25px; } 40% { background-position: 30px -50px; }
   60% { background-position: -70px -15px; } 80% { background-position: 55px 60px; } 100% { background-position: 0 0; }
 }
+
+/* ---------------------------------------------------------- install button */
+.btn-install {
+  display: block; margin: 12px auto 0; font-size: 0.95rem; padding: 10px 22px;
+}
+.btn-install[hidden], .hint[hidden] { display: none; }
