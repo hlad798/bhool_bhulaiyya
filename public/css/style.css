@@ -239,3 +239,20 @@ h2 {
   0% { opacity: 0; } 6% { opacity: 1; } 18% { opacity: 0.15; } 30% { opacity: 0.85; } 100% { opacity: 0; }
 }
 @keyframes redalarm { 0%, 100% { opacity: 0.35; } 50% { opacity: 1; } }
+
+/* ---------------------------------------------------------- board overlay: vignette + film grain (GPU) */
+#board-fx {
+  position: absolute; pointer-events: none; border-radius: 4px;
+  --vig: 130,12,16;
+  background:
+    radial-gradient(ellipse at center, rgba(0, 0, 0, 0) 42%, rgba(var(--vig), 0.28) 72%, rgba(var(--vig), 0.62) 100%);
+}
+#board-fx::after {
+  content: ''; position: absolute; inset: 0; opacity: 0.35; mix-blend-mode: screen;
+  background-image: var(--grain);
+  animation: grainShift 0.5s steps(5) infinite;
+}
+@keyframes grainShift {
+  0% { background-position: 0 0; } 20% { background-position: -40px 25px; } 40% { background-position: 30px -50px; }
+  60% { background-position: -70px -15px; } 80% { background-position: 55px 60px; } 100% { background-position: 0 0; }
+}

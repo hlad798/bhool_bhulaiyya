@@ -107,7 +107,7 @@ def level_config(level):
         'algorithm': algorithm,
         'rows': rows,
         'cols': cols,
-        'player_speed': 6.5,                                     # cells per second
+        'player_speed': round(10.0 + step * 0.2, 2),             # 10 -> 13.8 cells per second
         'ghost_speed': round(1.4 + step * 0.17, 2),              # 1.4 -> 4.6 cells per second
         'wake_delay': round(max(1.0, 5.0 - step * 0.21), 2),     # 5 s -> 1 s head start
         'question_time': 10,                                     # 10 seconds to answer, every level

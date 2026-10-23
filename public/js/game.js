@@ -34,7 +34,7 @@
   var ctx = canvas.getContext('2d');
   var staticLayer = document.createElement('canvas');
   var fogLayer = document.createElement('canvas');
-  var vignetteLayer = document.createElement('canvas');
+  var vignetteLayer = document.createElement('canvas');  // kept for older code paths; the overlay does the work now
 
   // ---------------------------------------------------------------- state
   var state = {
@@ -1034,6 +1034,7 @@
     state.lamps = [];
     state.lampAcc = 0;
     state.lampBurst = 0;
+    state.lampHinted = false;
     Backdrop.tint = (THEMES[data.config.theme] || THEMES.sandstone).vig;
     state.decor = makeDecor(data);
     state.staticDirty = true;
@@ -1047,8 +1048,9 @@
       'This floor is <b>' + data.config.layout + '</b>.<br>' +
       'Manjulika wakes in <b>' + data.config.wake_delay + ' seconds</b> and moves at <b>' +
       data.config.ghost_speed + ' steps per second</b>.<br>You have only <b>' +
-      data.config.question_time + ' seconds</b> to answer each riddle. Find the glowing door.' +
-      (data.spawn2 ? '<br><br><span style="color:#5dff9a">Her sister <b>Anjulika</b> also hunts these halls - she is coming from the other side.</span>' : ''),
+      data.config.question_time + ' seconds</b> to answer each riddle. Find the glowing white light.' +
+      (data.spawn2 ? '<br><br><span style="color:#5dff9a">Her sister <b>Anjulika</b> also hunts these halls - she is coming from the other side.</span>' : '') +
+      (data.config.lamps ? '<br><span style="color:#ffd27a">Golden <b>lamps</b> will appear on your path. Grab one and both sisters freeze for ' + data.config.lamp_freeze + ' second.</span>' : ''),
       [{ label: 'Begin', primary: true, onClick: function () {
         Sound.resume();
         state.running = true;
@@ -1240,7 +1242,7 @@
     if (!canMove(p.r, p.c, dir)) { return false; }
     p.r += dir.dr;
     p.c += dir.dc;
-    state.moveCooldown = 1 / state.cfg.player_speed;
+    state.moveCooldown = Math.max(state.moveCooldown, -0.5 / state.cfg.player_speed) + 1 / state.cfg.player_speed;
     afterPlayerMove();
     return true;
   }
@@ -1310,6 +1312,10 @@
       if (state.lamps[i].r === r && state.lamps[i].c === c) { return; }
     }
     state.lamps.push({ r: r, c: c, life: state.cfg.lamp_life, born: state.clock });
+    if (!state.lampHinted) {
+      state.lampHinted = true;
+      whisper('A golden lamp glows ahead... grab it to freeze them!');
+    }
   }
 
   function pickUpLamp() {
@@ -1383,7 +1389,7 @@
   // ================================================================== UPDATE
   function update(dt) {
     var p = state.player, gi, g;
-    var lerp = Math.min(1, dt * 16);
+    var lerp = Math.min(1, dt * Math.max(18, state.cfg ? state.cfg.player_speed * 2.6 : 18));
     p.x += (p.c - p.x) * lerp;
     p.y += (p.r - p.y) * lerp;
     for (gi = 0; gi < state.ghosts.length; gi++) {
@@ -1544,15 +1550,14 @@
     state.pw = cell * state.cols + 2 * m;
     state.ph = cell * state.rows + 2 * m;
     // render at least at 2x (up to 3x) for crisp, high-resolution graphics
-    state.dpr = Math.min(3, Math.max(2, window.devicePixelRatio || 1));
+    state.dpr = Math.min(2, Math.max(1.5, window.devicePixelRatio || 1));
     var w = Math.round(state.pw * state.dpr), h = Math.round(state.ph * state.dpr);
     canvas.width = w; canvas.height = h;
     canvas.style.width = state.pw + 'px';
     canvas.style.height = state.ph + 'px';
     staticLayer.width = w; staticLayer.height = h;
     fogLayer.width = w; fogLayer.height = h;
-    vignetteLayer.width = w; vignetteLayer.height = h;
-    buildVignette();
+    placeBoardFx();
     state.staticDirty = true;
   }
 
@@ -1861,9 +1866,9 @@
     c.lineWidth = t * 1.8;
     c.beginPath(); c.moveTo(-len / 2, 0); c.lineTo(len / 2, 0); c.stroke();
     var g = c.createLinearGradient(-len / 2, 0, len / 2, 0);
-    g.addColorStop(0, 'rgba(160,240,150,0.5)');
-    g.addColorStop(0.5, 'rgba(235,255,220,1)');
-    g.addColorStop(1, 'rgba(160,240,150,0.5)');
+    g.addColorStop(0, 'rgba(255,255,255,0.6)');
+    g.addColorStop(0.5, 'rgba(255,255,255,1)');
+    g.addColorStop(1, 'rgba(255,255,255,0.6)');
     c.strokeStyle = g;
     c.lineWidth = t * 1.1;
     c.beginPath(); c.moveTo(-len / 2, 0); c.lineTo(len / 2, 0); c.stroke();
@@ -2082,6 +2087,22 @@
     state.staticDirty = false;
   }
 
+  // keep the grain + vignette overlay exactly on top of the canvas, tinted for this level
+  function placeBoardFx() {
+    var fx = $('board-fx');
+    if (!fx) { return; }
+    fx.style.left = canvas.offsetLeft + 'px';
+    fx.style.top = canvas.offsetTop + 'px';
+    fx.style.width = canvas.offsetWidth + 'px';
+    fx.style.height = canvas.offsetHeight + 'px';
+    var v = theme().vig;
+    fx.style.setProperty('--vig', v[0] + ',' + v[1] + ',' + v[2]);
+    if (!fx.getAttribute('data-grain')) {
+      fx.style.setProperty('--grain', 'url(' + grain.toDataURL() + ')');
+      fx.setAttribute('data-grain', '1');
+    }
+  }
+
   // red edges like the corners of your eyes going dark
   function buildVignette() {
     var c = vignetteLayer.getContext('2d');
@@ -2247,30 +2268,28 @@
     drawCandleFlames(ctx, cs, t);
     drawLamps(ctx, cs, t);
 
-    // light spilling from the exit
-    var ep = exitPoint(cs);
-    var pulse = 0.35 + Math.sin(t * 2.5) * 0.15;
-    var eg = ctx.createRadialGradient(ep.x, ep.y, 1, ep.x, ep.y, cs * 1.3);
-    eg.addColorStop(0, 'rgba(170,240,150,' + pulse + ')');
-    eg.addColorStop(1, 'rgba(170,240,150,0)');
-    ctx.fillStyle = eg;
-    ctx.beginPath(); ctx.arc(ep.x, ep.y, cs * 1.3, 0, TWO_PI); ctx.fill();
+    // the exit door, always visible through the darkness
+    drawExitDoor(ctx, cs, t);
 
     // Her red eyes are visible even in the dark once she is awake
     for (gi = 0; gi < state.ghosts.length; gi++) {
       if (state.ghosts[gi].awake) { drawGhostEyes(ctx, boxes[gi], t); }
     }
 
-    // blood-red vignette and film grain over everything
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.drawImage(vignetteLayer, 0, 0);
-    if (!grainPattern) { grainPattern = ctx.createPattern(grain, 'repeat'); }
-    ctx.save();
-    ctx.globalAlpha = 0.5;
-    ctx.translate(Math.floor(Math.random() * 160), Math.floor(Math.random() * 160));
-    ctx.fillStyle = grainPattern;
-    ctx.fillRect(-160, -160, canvas.width + 160, canvas.height + 160);
-    ctx.restore();
+    // the blood-red vignette and film grain are a CSS overlay (#board-fx) on top of the canvas
+  }
+
+  // ---- the exit: a soft white light glowing from the gap in the wall.
+  // White shows up on every colour theme and never looks like a gold lamp.
+  function drawExitDoor(c, cs, t) {
+    var e = exitPoint(cs);
+    var pulse = 0.5 + 0.18 * Math.sin(t * 2.2);
+    var g = c.createRadialGradient(e.x, e.y, 0, e.x, e.y, cs * 1.25);
+    g.addColorStop(0, 'rgba(255,255,255,' + pulse + ')');
+    g.addColorStop(0.35, 'rgba(235,240,255,' + (pulse * 0.45) + ')');
+    g.addColorStop(1, 'rgba(235,240,255,0)');
+    c.fillStyle = g;
+    c.beginPath(); c.arc(e.x, e.y, cs * 1.25, 0, TWO_PI); c.fill();
   }
 
   // ---- the lamps you can grab, glowing through the dark
@@ -2648,8 +2667,29 @@
       c.beginPath(); c.arc(x, y + s * 0.1, s * 0.22, 0, TWO_PI); c.fill();
     },
 
+    // one soft cloud, painted once
+    makeCloud: function () {
+      var cv = document.createElement('canvas');
+      cv.width = 512; cv.height = 194;
+      var c = cv.getContext('2d');
+      for (var p = 0; p < 5; p++) {
+        var x = 97 + p * 80, y = 97 + Math.sin(p) * 8;
+        var g = c.createRadialGradient(x, y, 0, x, y, 97);
+        g.addColorStop(0, 'rgba(18,8,18,0.8)');
+        g.addColorStop(1, 'rgba(18,8,18,0)');
+        c.fillStyle = g;
+        c.fillRect(x - 97, 0, 194, 194);
+      }
+      return cv;
+    },
+
     frame: function (t, dt) {
       if (!this.cv || !this.scene) { return; }
+      // behind the dimmed game the sky only needs ~15 updates a second
+      this.skip = (this.skip || 0) + dt;
+      if (this.dim > 0 && this.skip < 0.066) { return; }
+      dt = this.skip;
+      this.skip = 0;
       var c = this.c, w = this.w, h = this.h, k;
       c.setTransform(1, 0, 0, 1, 0, 0);
       c.drawImage(this.scene, 0, 0);
@@ -2660,13 +2700,10 @@
         cl.x += cl.v * dt;
         if (cl.x > 1.3) { cl.x = -0.4; }
         var cx = cl.x * w, cy = cl.y * h, cw = cl.w * w;
-        for (var p = 0; p < 5; p++) {
-          var g = c.createRadialGradient(cx + p * cw * 0.18, cy + Math.sin(p) * 8, 0, cx + p * cw * 0.18, cy + Math.sin(p) * 8, cw * 0.22);
-          g.addColorStop(0, 'rgba(18,8,18,' + (cl.a * 0.8) + ')');
-          g.addColorStop(1, 'rgba(18,8,18,0)');
-          c.fillStyle = g;
-          c.fillRect(cx + p * cw * 0.18 - cw * 0.22, cy - cw * 0.22, cw * 0.44, cw * 0.44);
-        }
+        if (!this.cloudTex) { this.cloudTex = this.makeCloud(); }
+        c.globalAlpha = cl.a;
+        c.drawImage(this.cloudTex, cx - cw * 0.22, cy - cw * 0.22, cw * 1.16, cw * 0.44);
+        c.globalAlpha = 1;
       }
       // bats
       for (k = 0; k < this.bats.length; k++) {
