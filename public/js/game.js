@@ -56,6 +56,9 @@
     deadEnds: {},
     player: { r: 0, c: 0, x: 0, y: 0 },
     ghosts: [],
+    lamps: [],
+    lampAcc: 0,
+    lampBurst: 0,
     catcher: 'manjulika',
     running: false,
     paused: false,
@@ -958,7 +961,7 @@
   }
 
   function makeGhost(kind, name, r, c, speed, wake) {
-    return { kind: kind, name: name, r: r, c: c, x: c, y: r, awake: false, wakeIn: wake, moveAcc: 0, speed: speed, dist: 99 };
+    return { kind: kind, name: name, r: r, c: c, x: c, y: r, awake: false, wakeIn: wake, moveAcc: 0, speed: speed, dist: 99, frozen: 0 };
   }
 
   function nearestGhost() {
@@ -1028,6 +1031,9 @@
     state.paused = false;
     state.question = null;
     state.blocked = data.blocked;
+    state.lamps = [];
+    state.lampAcc = 0;
+    state.lampBurst = 0;
     Backdrop.tint = (THEMES[data.config.theme] || THEMES.sandstone).vig;
     state.decor = makeDecor(data);
     state.staticDirty = true;
@@ -1086,15 +1092,30 @@
   function caught(reason, who) {
     state.catcher = who || 'manjulika';
     if (!state.running && !state.question) { return; }
+    // were BOTH sisters on you at once? (the other one is awake and right beside you)
+    var faces = [state.catcher];
+    if (state.ghosts.length > 1) {
+      var near = bfsFromPlayer();
+      for (var gi = 0; gi < state.ghosts.length; gi++) {
+        var og = state.ghosts[gi];
+        var od = near[og.r * state.cols + og.c];
+        if (og.kind !== faces[0] && og.awake && od >= 0 && od <= 2) {
+          faces.push(og.kind);
+          state.catcher = 'both';
+          reason = 'Manjulika and Anjulika reached you together. There was nowhere left to run.';
+        }
+      }
+    }
     state.running = false;
     state.paused = false;
     state.heldDir = null;
     $('modal-question').classList.remove('show');
     $('board-wrap').classList.remove('shake');
-    startScare(state.catcher);
+    startScare(faces);
     redAlarm(true);
     // a short, low, echoing horror scream as she lunges, and a heavy hit on impact
     setTimeout(function () { Sound.scream(0.65, 1.3, { wet: 1.3, pitch: 0.74 }); }, 250);
+    if (faces.length > 1) { setTimeout(function () { Sound.scream(0.5, 1.3, { wet: 1.3, pitch: 0.86 }); }, 370); }
     setTimeout(function () { Sound.boom(0.9); }, 480);
     setTimeout(function () {
       stopScare();
@@ -1106,7 +1127,7 @@
   }
 
   function showCaught(reason, title) {
-    showMessage((state.catcher === 'anjulika' ? 'Anjulika' : 'Manjulika') + ' caught you!', reason +
+    showMessage((state.catcher === 'both' ? 'Manjulika and Anjulika' : (state.catcher === 'anjulika' ? 'Anjulika' : 'Manjulika')) + ' caught you!', reason +
       '<br><br>Score so far: <b>' + state.total + '</b>' + (title ? '<br>Rank: <b>' + title + '</b>' : ''),
       [{ label: 'Retry level ' + state.level, primary: true, onClick: function () {
           state.total = state.levelStartTotal;
@@ -1237,8 +1258,74 @@
       levelComplete();
       return;
     }
+    if (state.lamps.length) { pickUpLamp(); }
     var de = state.deadEnds[key(p.r, p.c)];
     if (de && !de.solved) { openQuestion(de); }
+  }
+
+  // Breadth-first search from any cell (used to find the route to the exit).
+  function bfsFrom(sr, sc) {
+    var cols = state.cols;
+    var dist = new Int16Array(state.rows * cols);
+    for (var i = 0; i < dist.length; i++) { dist[i] = -1; }
+    var qr = [sr], qc = [sc], head = 0;
+    dist[sr * cols + sc] = 0;
+    while (head < qr.length) {
+      var r = qr[head], c = qc[head];
+      head++;
+      var cell = state.grid[r][c];
+      for (var b = 1; b <= 8; b *= 2) {
+        if (cell & b) { continue; }
+        var nr = r + DELTA[b][0], nc = c + DELTA[b][1];
+        if (dist[nr * cols + nc] === -1) {
+          dist[nr * cols + nc] = dist[r * cols + c] + 1;
+          qr.push(nr); qc.push(nc);
+        }
+      }
+    }
+    return dist;
+  }
+
+  // ---- lamps (level 7 and up): one appears a few steps ahead of you on the
+  // way to the exit; grab it and the ghosts are frozen for a moment
+  function spawnLamp() {
+    var exitMap = bfsFrom(state.data.exit[0], state.data.exit[1]);
+    var cols = state.cols;
+    var r = state.player.r, c = state.player.c;
+    var steps = 3 + Math.floor(Math.random() * 5);
+    for (var k = 0; k < steps; k++) {
+      var cur = exitMap[r * cols + c], next = null;
+      var cell = state.grid[r][c];
+      for (var b = 1; b <= 8; b *= 2) {
+        if (cell & b) { continue; }
+        var nr = r + DELTA[b][0], nc = c + DELTA[b][1];
+        if (exitMap[nr * cols + nc] >= 0 && exitMap[nr * cols + nc] < cur) { next = [nr, nc]; }
+      }
+      if (!next) { break; }
+      r = next[0]; c = next[1];
+    }
+    if (r === state.player.r && c === state.player.c) { return; }
+    if (r === state.data.exit[0] && c === state.data.exit[1]) { return; }
+    for (var i = 0; i < state.lamps.length; i++) {
+      if (state.lamps[i].r === r && state.lamps[i].c === c) { return; }
+    }
+    state.lamps.push({ r: r, c: c, life: state.cfg.lamp_life, born: state.clock });
+  }
+
+  function pickUpLamp() {
+    for (var i = 0; i < state.lamps.length; i++) {
+      var lp = state.lamps[i];
+      if (lp.r === state.player.r && lp.c === state.player.c) {
+        state.lamps.splice(i, 1);
+        for (var gi = 0; gi < state.ghosts.length; gi++) {
+          state.ghosts[gi].frozen = state.cfg.lamp_freeze;
+        }
+        state.lampBurst = 0.7;
+        Sound.chime();
+        whisper('The lamp burns bright... they cannot move!');
+        return;
+      }
+    }
   }
 
   // Breadth-first search from the player: gives Manjulika the shortest way to you.
@@ -1365,6 +1452,11 @@
         }
       } else {
         anyAwake = true;
+        if (g.frozen > 0) {
+          // held back by the lamp's light
+          g.frozen -= dt;
+          continue;
+        }
         g.moveAcc += dt;
         var interval = 1 / g.speed;
         while (g.moveAcc >= interval && state.running) {
@@ -1405,6 +1497,20 @@
     }
     if (state.dist >= 5) { state.nearArmed = true; }
     $('board-wrap').classList.toggle('shake', !!hunter && state.dist <= 3);
+
+    // lamps: a new one every few seconds; old ones burn out
+    if (state.cfg.lamps) {
+      state.lampAcc += dt;
+      if (state.lampAcc >= state.cfg.lamp_every && state.lamps.length < 2) {
+        state.lampAcc = 0;
+        spawnLamp();
+      }
+      for (var li = state.lamps.length - 1; li >= 0; li--) {
+        state.lamps[li].life -= dt;
+        if (state.lamps[li].life <= 0) { state.lamps.splice(li, 1); }
+      }
+    }
+    if (state.lampBurst > 0) { state.lampBurst -= dt; }
 
     // a red flash now and then, and more often when she is close
     state.redAcc = (state.redAcc || 0) + dt;
@@ -2139,6 +2245,7 @@
     // floating lights drifting through the dark, and candles burning in the corridors
     drawOrbs(ctx, cs, t);
     drawCandleFlames(ctx, cs, t);
+    drawLamps(ctx, cs, t);
 
     // light spilling from the exit
     var ep = exitPoint(cs);
@@ -2166,17 +2273,81 @@
     ctx.restore();
   }
 
+  // ---- the lamps you can grab, glowing through the dark
+  function drawLamps(c, cs, t) {
+    var i, k;
+    for (i = 0; i < state.lamps.length; i++) {
+      var lp = state.lamps[i];
+      var x = (lp.c + 0.5) * cs, y = (lp.r + 0.55) * cs;
+      var fade = Math.min(1, lp.life / 2) * Math.min(1, (state.clock - lp.born) * 3);
+      var pulse = 1 + 0.15 * Math.sin(t * 6 + i);
+      var halo = c.createRadialGradient(x, y - cs * 0.15, 0, x, y - cs * 0.15, cs * 0.9 * pulse);
+      halo.addColorStop(0, 'rgba(255,215,120,' + (0.55 * fade) + ')');
+      halo.addColorStop(1, 'rgba(255,170,60,0)');
+      c.fillStyle = halo;
+      c.beginPath(); c.arc(x, y - cs * 0.15, cs * 0.9 * pulse, 0, TWO_PI); c.fill();
+      c.globalAlpha = fade;
+      // a brass diya on a little stand
+      c.fillStyle = '#6b4a14';
+      c.fillRect(x - cs * 0.05, y - cs * 0.02, cs * 0.1, cs * 0.16);
+      c.beginPath(); c.ellipse(x, y + cs * 0.15, cs * 0.16, cs * 0.05, 0, 0, TWO_PI); c.fill();
+      var bg = c.createLinearGradient(x - cs * 0.2, 0, x + cs * 0.2, 0);
+      bg.addColorStop(0, '#7a5312');
+      bg.addColorStop(0.5, '#f2c75c');
+      bg.addColorStop(1, '#7a5312');
+      c.fillStyle = bg;
+      c.beginPath();
+      c.moveTo(x - cs * 0.22, y - cs * 0.06);
+      c.quadraticCurveTo(x, y + cs * 0.12, x + cs * 0.22, y - cs * 0.06);
+      c.lineTo(x + cs * 0.28, y - cs * 0.1);
+      c.quadraticCurveTo(x, y - cs * 0.02, x - cs * 0.22, y - cs * 0.06);
+      c.closePath();
+      c.fill();
+      var fl = 1 + 0.2 * Math.sin(t * 15 + i * 3);
+      c.fillStyle = 'rgba(255,150,40,0.95)';
+      c.beginPath(); c.ellipse(x + cs * 0.2, y - cs * 0.2 * fl, cs * 0.05, cs * 0.11 * fl, 0.2, 0, TWO_PI); c.fill();
+      c.fillStyle = 'rgba(255,250,215,0.95)';
+      c.beginPath(); c.ellipse(x + cs * 0.2, y - cs * 0.16, cs * 0.022, cs * 0.06 * fl, 0.2, 0, TWO_PI); c.fill();
+      // sparkles circling it, so it reads as something to grab
+      c.fillStyle = 'rgba(255,240,180,0.9)';
+      for (k = 0; k < 4; k++) {
+        var a = t * 2 + k * Math.PI / 2;
+        c.beginPath(); c.arc(x + Math.cos(a) * cs * 0.38, y - cs * 0.15 + Math.sin(a) * cs * 0.38, cs * 0.025, 0, TWO_PI); c.fill();
+      }
+      c.globalAlpha = 1;
+    }
+    // ghosts held back by the lamp shimmer gold
+    for (i = 0; i < state.ghosts.length; i++) {
+      var gh = state.ghosts[i];
+      if (gh.awake && gh.frozen > 0) {
+        var gx = (gh.x + 0.5) * cs, gy = (gh.y + 0.3) * cs;
+        var fr = c.createRadialGradient(gx, gy, 0, gx, gy, cs * 0.9);
+        fr.addColorStop(0, 'rgba(255,220,120,0.45)');
+        fr.addColorStop(1, 'rgba(255,220,120,0)');
+        c.fillStyle = fr;
+        c.beginPath(); c.arc(gx, gy, cs * 0.9, 0, TWO_PI); c.fill();
+        c.strokeStyle = 'rgba(255,225,140,' + (0.5 + 0.4 * Math.sin(t * 20)) + ')';
+        c.lineWidth = Math.max(1.5, cs * 0.05);
+        c.beginPath(); c.arc(gx, gy, cs * 0.55, 0, TWO_PI); c.stroke();
+      }
+    }
+    // a warm burst of light around you when you grab a lamp
+    if (state.lampBurst > 0) {
+      var px = (state.player.x + 0.5) * cs, py = (state.player.y + 0.5) * cs;
+      var br = c.createRadialGradient(px, py, 0, px, py, cs * 3);
+      br.addColorStop(0, 'rgba(255,220,130,' + (state.lampBurst * 0.6) + ')');
+      br.addColorStop(1, 'rgba(255,220,130,0)');
+      c.fillStyle = br;
+      c.beginPath(); c.arc(px, py, cs * 3, 0, TWO_PI); c.fill();
+    }
+  }
+
   // ---------------------------------------------------------------- jumpscare
   // She appears far away in the dark, flickering... then rushes at you until
   // her face fills - and overflows - the whole screen, shaking.
-  var scare = { img: null, imgs: {}, start: 0, running: false };
+  var scare = { faces: [], imgs: {}, start: 0, running: false };
 
-  function startScare(kind) {
-    var sc = $('scare-canvas');
-    var dpr = window.devicePixelRatio || 1;
-    sc.width = Math.round(window.innerWidth * dpr);
-    sc.height = Math.round(window.innerHeight * dpr);
-    kind = kind || 'manjulika';
+  function portraitOf(kind) {
     if (!scare.imgs[kind]) {
       var im = document.createElement('canvas');
       im.width = 1600;
@@ -2184,7 +2355,19 @@
       window.BBChars.drawGhostPortrait(im.getContext('2d'), 1600, 1600, true, kind);
       scare.imgs[kind] = im;
     }
-    scare.img = scare.imgs[kind];
+    return scare.imgs[kind];
+  }
+
+  // kinds: one ghost, or both sisters side by side when they catch you together
+  function startScare(kinds) {
+    var sc = $('scare-canvas');
+    var dpr = window.devicePixelRatio || 1;
+    sc.width = Math.round(window.innerWidth * dpr);
+    sc.height = Math.round(window.innerHeight * dpr);
+    if (typeof kinds === 'string') { kinds = [kinds]; }
+    kinds = kinds && kinds.length ? kinds : ['manjulika'];
+    scare.faces = [];
+    for (var i = 0; i < kinds.length; i++) { scare.faces.push(portraitOf(kinds[i])); }
     scare.start = performance.now();
     scare.running = true;
     $('jumpscare').classList.add('show');
@@ -2222,35 +2405,38 @@
     c.fillStyle = '#000';
     c.fillRect(0, 0, W, H);
 
-    var base = Math.max(H, W * 0.62);
-    var scale;
-    if (t < 0.22) {
-      scale = 0.2 + t * 0.3;                            // far away, barely there
-    } else if (t < 0.55) {
-      var k = (t - 0.22) / 0.33;
-      scale = 0.27 + Math.pow(k, 2.4) * 1.55;           // the lunge, faster and faster
-    } else if (t < 0.8) {
-      scale = 1.82 - (t - 0.55) / 0.25 * 0.3;           // bursts past the screen, then settles
-    } else {
-      scale = 1.52 + Math.sin(t * 2.5) * 0.03;          // right in your face
-    }
-    var size = base * scale;
-    var shake = t > 0.4 ? base * (t < 1.4 ? 0.018 : 0.006) : 0;
-    var x = W / 2 - size / 2 + (Math.random() - 0.5) * shake * 2;
-    var y = H / 2 - size * 0.46 + (Math.random() - 0.5) * shake * 2;
-
-    var alpha = 1;
-    if (t < 0.55 && Math.random() < 0.3) { alpha = 0.25; }   // flicker as she comes
-    c.globalAlpha = alpha;
-    // a smeared after-image while she rushes forward
-    if (t > 0.3 && t < 0.6) {
-      c.globalAlpha = alpha * 0.35;
-      var s2 = size * 0.85;
-      c.drawImage(scare.img, W / 2 - s2 / 2, H / 2 - s2 * 0.46, s2, s2);
+    var two = scare.faces.length > 1;
+    var base = two ? Math.max(H * 0.82, W * 0.38) : Math.max(H, W * 0.62);
+    for (var fi = 0; fi < scare.faces.length; fi++) {
+      var img = scare.faces[fi];
+      var ft = t - fi * 0.12;                                // the second sister lunges a beat later
+      var scale;
+      if (ft < 0.22) {
+        scale = 0.2 + Math.max(0, ft) * 0.3;                 // far away, barely there
+      } else if (ft < 0.55) {
+        var k = (ft - 0.22) / 0.33;
+        scale = 0.27 + Math.pow(k, 2.4) * 1.55;              // the lunge, faster and faster
+      } else if (ft < 0.8) {
+        scale = 1.82 - (ft - 0.55) / 0.25 * 0.3;             // bursts past the screen, then settles
+      } else {
+        scale = 1.52 + Math.sin(ft * 2.5 + fi) * 0.03;       // right in your face
+      }
+      var size = base * scale;
+      var cxf = two ? (fi === 0 ? W * 0.28 : W * 0.72) : W / 2;
+      var shake = ft > 0.4 ? base * (ft < 1.4 ? 0.018 : 0.006) : 0;
+      var x = cxf - size / 2 + (Math.random() - 0.5) * shake * 2;
+      var y = H / 2 - size * 0.46 + (Math.random() - 0.5) * shake * 2;
+      var alpha = 1;
+      if (ft < 0.55 && Math.random() < 0.3) { alpha = 0.25; }   // flicker as she comes
+      if (ft > 0.3 && ft < 0.6) {
+        c.globalAlpha = alpha * 0.35;
+        var s2 = size * 0.85;
+        c.drawImage(img, cxf - s2 / 2, H / 2 - s2 * 0.46, s2, s2);
+      }
       c.globalAlpha = alpha;
+      c.drawImage(img, x, y, size, size);
+      c.globalAlpha = 1;
     }
-    c.drawImage(scare.img, x, y, size, size);
-    c.globalAlpha = 1;
 
     // blood-red flash on impact
     if (t > 0.5 && t < 0.85) {
