@@ -71,7 +71,8 @@
     staticDirty: true,
     particles: [],
     question: null,
-    clock: 0
+    clock: 0,
+    character: 'male'
   };
 
   // ================================================================== AUDIO
@@ -333,49 +334,67 @@
       });
     },
 
-    // ------------------------------------------------------------ music
-    // Quiet, eerie Hindustani background: a tanpura drone (Pa-Sa-Sa-Sa)
-    // with now and then a slow, sarangi-like voice singing a phrase of
-    // Raga Todi - komal Re, komal Ga, tivra Ma, komal Dha - with the
-    // characteristic slow swaying (andolan) on komal Re and komal Dha.
-    SA: 138.59,  // C#3
-
+    // ------------------------------------------------------------ ambience
+    // Deep-ocean horror ambience: a pressure rumble and a sub drone underneath,
+    // with now and then a whale-like moan from the deep, a sonar ping, creaking
+    // timbers, water dripping, a distant temple bell, and a faint wordless
+    // woman's hum drifting through the halls. All quiet, so the heartbeat and
+    // the ghungroo cut through.
     startDrone: function () {
       if (!this.ctx || this.droneOn) { return; }
       this.droneOn = true;
       var c = this.ctx;
-      this.musicLevel = 0.3;
+      this.musicLevel = 0.4;
       this.musicBus = c.createGain();
       this.musicBus.gain.value = this.musicLevel;
       this.musicBus.connect(this.master);
-      var send = c.createGain();
-      send.gain.value = 0.9;
-      this.musicBus.connect(send);
-      send.connect(this.reverb);
 
-      // faint night air
-      var wind = this.noise();
-      var bp = c.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 420; bp.Q.value = 0.7;
-      var wg = c.createGain(); wg.gain.value = 0.035;
-      wind.connect(bp); bp.connect(wg); wg.connect(this.musicBus);
-      wind.start();
+      // pressure rumble, swelling slowly like the sea
+      var rum = this.noise();
+      var rlp = c.createBiquadFilter(); rlp.type = 'lowpass'; rlp.frequency.value = 110; rlp.Q.value = 0.8;
+      var rg = c.createGain(); rg.gain.value = 0.22;
+      var swell = c.createOscillator(); swell.frequency.value = 0.06;
+      var swellDepth = c.createGain(); swellDepth.gain.value = 0.14;
+      swell.connect(swellDepth); swellDepth.connect(rg.gain);
+      rum.connect(rlp); rlp.connect(rg); rg.connect(this.musicBus);
+      rum.start(); swell.start();
+
+      // sub drone, two notes beating slowly against each other
+      var dlp = c.createBiquadFilter(); dlp.type = 'lowpass'; dlp.frequency.value = 220;
+      var dg = c.createGain(); dg.gain.value = 0.045;
+      dlp.connect(dg); dg.connect(this.musicBus);
+      var freqs = [43.65, 44.1, 87.3];
+      for (var i = 0; i < freqs.length; i++) {
+        var o = c.createOscillator();
+        o.type = i === 2 ? 'triangle' : 'sine';
+        o.frequency.value = freqs[i];
+        var og = c.createGain(); og.gain.value = i === 2 ? 0.3 : 1;
+        o.connect(og); og.connect(dlp);
+        o.start();
+      }
+
+      // muffled, underwater hiss
+      var hiss = this.noise();
+      var hbp = c.createBiquadFilter(); hbp.type = 'bandpass'; hbp.frequency.value = 700; hbp.Q.value = 0.5;
+      var hg = c.createGain(); hg.gain.value = 0.02;
+      hiss.connect(hbp); hbp.connect(hg); hg.connect(this.musicBus);
+      hiss.start();
 
       // a low pulse that only rises when she is close (see setTension)
-      var low = c.createOscillator(); low.type = 'sine'; low.frequency.value = this.SA / 2;
+      var low = c.createOscillator(); low.type = 'sine'; low.frequency.value = 69.3;
       this.tensionGain = c.createGain(); this.tensionGain.gain.value = 0;
       low.connect(this.tensionGain); this.tensionGain.connect(this.master);
       low.start();
 
-      var SA = this.SA;
-      this.tanpura = [
-        this.renderPluck(SA * 0.749),   // Pa (below Sa)
-        this.renderPluck(SA),           // Sa
-        this.renderPluck(SA),           // Sa
-        this.renderPluck(SA / 2)        // low Sa (kharaj)
-      ];
-      this.pluckIndex = 0;
-      this.nextPluck = c.currentTime + 0.4;
-      this.nextPhrase = c.currentTime + 7;
+      this.creaks = [this.renderCreak(), this.renderCreak(), this.renderCreak()];
+      this.bellBuf = this.renderTempleBell();
+      var now = c.currentTime;
+      this.nextMoan = now + 4;
+      this.nextPing = now + 10;
+      this.nextCreak = now + 6;
+      this.nextHum = now + 16;
+      this.nextBell = now + 24;
+      this.nextDrip = now + 2;
       var self = this;
       if (!this.fixedCtx) {
         this.musicTimer = setInterval(function () { self.scheduleMusic(); }, 200);
@@ -383,137 +402,224 @@
     },
 
     scheduleMusic: function () {
-      var c = this.ctx;
-      var ahead = c.currentTime + 0.7;
-      while (this.nextPluck < ahead) {
-        var idx = this.pluckIndex % 4;
-        this.playBuffer(this.tanpura[idx], idx === 3 ? 0.42 : 0.32,
-          { when: this.nextPluck, dest: this.musicBus, rate: 1 + (Math.random() - 0.5) * 0.002 });
-        this.nextPluck += idx === 3 ? 1.5 : 0.9;
-        this.pluckIndex++;
+      var soon = this.ctx.currentTime + 0.4;
+      if (this.nextMoan < soon) { this.moan(this.nextMoan); this.nextMoan += 9 + Math.random() * 8; }
+      if (this.nextPing < soon) { this.sonar(this.nextPing); this.nextPing += 14 + Math.random() * 12; }
+      if (this.nextCreak < soon) {
+        this.playBuffer(this.creaks[Math.floor(Math.random() * this.creaks.length)], 0.3,
+          { when: this.nextCreak, dest: this.musicBus, pan: Math.random() * 1.6 - 0.8, rate: 0.8 + Math.random() * 0.4, wet: 0.7 });
+        this.nextCreak += 6 + Math.random() * 9;
       }
-      if (c.currentTime + 0.5 > this.nextPhrase) {
-        var dur = this.playPhrase(this.nextPhrase);
-        this.nextPhrase += dur + 6 + Math.random() * 8;
+      if (this.nextHum < soon) { this.nextHum += this.hum(this.nextHum) + 14 + Math.random() * 14; }
+      if (this.nextBell < soon) {
+        this.playBuffer(this.bellBuf, 0.16, { when: this.nextBell, dest: this.musicBus, wet: 1.3, rate: 0.9 + Math.random() * 0.2 });
+        this.nextBell += 24 + Math.random() * 18;
+      }
+      if (this.nextDrip < soon) { this.drip(this.nextDrip); this.nextDrip += 2.5 + Math.random() * 6; }
+    },
+
+    // send a node to the music bus, panned, with some echo
+    toMusic: function (node, pan, wet) {
+      var c = this.ctx;
+      var out = node;
+      if (c.createStereoPanner) {
+        var p = c.createStereoPanner();
+        p.pan.value = pan;
+        node.connect(p);
+        out = p;
+      }
+      out.connect(this.musicBus);
+      var send = c.createGain();
+      send.gain.value = wet;
+      out.connect(send);
+      send.connect(this.reverb);
+    },
+
+    // a whale-like moan rising out of the deep
+    moan: function (t0) {
+      var c = this.ctx;
+      var dur = 4 + Math.random() * 3;
+      var f0 = 55 + Math.random() * 25;
+      var n = 200, curve = new Float32Array(n);
+      for (var k = 0; k < n; k++) {
+        var u = k / (n - 1);
+        var f = u < 0.35 ? f0 * (1 + 0.9 * (u / 0.35)) : f0 * (1.9 - 1.1 * ((u - 0.35) / 0.65));
+        curve[k] = f * (1 + 0.02 * Math.sin(u * 23));
+      }
+      var o = c.createOscillator();
+      o.type = 'sawtooth';
+      o.frequency.setValueCurveAtTime(curve, t0, dur);
+      var f1 = c.createBiquadFilter(); f1.type = 'bandpass'; f1.frequency.value = 380; f1.Q.value = 5;
+      var f2 = c.createBiquadFilter(); f2.type = 'bandpass'; f2.frequency.value = 820; f2.Q.value = 7;
+      var lp = c.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1100;
+      var g = c.createGain();
+      g.gain.setValueAtTime(0, t0);
+      g.gain.linearRampToValueAtTime(0.28, t0 + dur * 0.3);
+      g.gain.linearRampToValueAtTime(0.18, t0 + dur * 0.7);
+      g.gain.linearRampToValueAtTime(0, t0 + dur);
+      o.connect(f1); o.connect(f2); f1.connect(lp); f2.connect(lp); lp.connect(g);
+      this.toMusic(g, Math.random() * 1.4 - 0.7, 1.4);
+      o.start(t0); o.stop(t0 + dur + 0.05);
+    },
+
+    // a sonar ping, sometimes answered by a second one
+    sonar: function (t0) {
+      var c = this.ctx;
+      var count = Math.random() < 0.4 ? 2 : 1;
+      for (var k = 0; k < count; k++) {
+        var t = t0 + k * 1.9;
+        var o = c.createOscillator();
+        o.type = 'sine';
+        o.frequency.value = 1150;
+        var g = c.createGain();
+        g.gain.setValueAtTime(0.0001, t);
+        g.gain.exponentialRampToValueAtTime(k ? 0.05 : 0.09, t + 0.005);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + 0.9);
+        o.connect(g);
+        this.toMusic(g, (Math.random() - 0.5) * 0.6, 1.6);
+        o.start(t); o.stop(t + 0.95);
       }
     },
 
-    // A tanpura string: Karplus-Strong plucked string with a buzzing
-    // jawari brightness, rendered once into a buffer.
-    renderPluck: function (freq) {
+    // a single drop of water into a dark pool
+    drip: function (t0) {
       var c = this.ctx;
-      var sr = c.sampleRate;
-      var len = Math.floor(sr * 5);
-      var buf = c.createBuffer(1, len, sr);
-      var d = buf.getChannelData(0);
-      var period = Math.max(2, Math.round(sr / freq));
-      var line = new Float32Array(period);
-      var lp = 0, i;
-      for (i = 0; i < period; i++) {
-        lp += 0.5 * ((Math.random() * 2 - 1) - lp);
-        line[i] = lp;
-      }
-      var idx = 0;
-      for (i = 0; i < len; i++) {
-        var nxt = (idx + 1) % period;
-        var cur = line[idx];
-        line[idx] = (cur * 0.52 + line[nxt] * 0.48) * 0.99965;
-        d[i] = cur;
-        idx = nxt;
-      }
-      // jawari: a gentle buzz that keeps the upper harmonics alive
-      var prev = 0, peak = 0;
-      for (i = 0; i < len; i++) {
-        var x = d[i];
-        var bright = x - prev;
-        prev = x;
-        var y = Math.tanh(1.6 * x) + 0.55 * bright * (0.6 + 0.4 * Math.abs(x));
-        var fade = i > len - sr * 0.5 ? (len - i) / (sr * 0.5) : 1;
-        d[i] = y * fade;
-        peak = Math.max(peak, Math.abs(d[i]));
-      }
-      for (i = 0; i < len; i++) { d[i] *= 0.8 / (peak || 1); }
-      return buf;
+      var o = c.createOscillator();
+      o.type = 'sine';
+      var f = 650 + Math.random() * 300;
+      o.frequency.setValueAtTime(f, t0);
+      o.frequency.exponentialRampToValueAtTime(f * 2.6, t0 + 0.03);
+      var g = c.createGain();
+      g.gain.setValueAtTime(0.0001, t0);
+      g.gain.exponentialRampToValueAtTime(0.09, t0 + 0.004);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.07);
+      o.connect(g);
+      this.toMusic(g, Math.random() * 1.6 - 0.8, 1.0);
+      o.start(t0); o.stop(t0 + 0.08);
     },
 
-    // A slow raga phrase on a bowed, sarangi-like voice. Returns its length.
-    playPhrase: function (t0) {
+    // a faint, wordless woman's hum somewhere far away, sliding between
+    // dark notes (komal Re, komal Ga, komal Dha, komal Ni). Returns its length.
+    hum: function (t0) {
       var c = this.ctx;
-      var PHRASES = [
-        [[0, 1.4], [1, 0.9], [3, 1.5], [1, 0.8], [0, 2.2]],
-        [[-1, 0.9], [0, 0.7], [1, 0.8], [3, 1.1], [6, 1.7], [3, 0.9], [1, 0.8], [0, 2.0]],
-        [[6, 1.1], [8, 1.6], [11, 0.9], [12, 2.0], [11, 0.8], [8, 1.4], [6, 1.0], [3, 1.8]],
-        [[8, 1.8], [6, 0.9], [3, 1.1], [1, 1.3], [-1, 1.0], [0, 2.4]],
-        [[3, 1.1], [6, 1.3], [8, 2.0], [6, 0.8], [3, 1.1], [1, 0.9], [0, 2.2]],
-        [[-4, 1.6], [-1, 1.0], [0, 1.2], [1, 1.6], [0, 2.4]]
-      ];
-      var notes = PHRASES[Math.floor(Math.random() * PHRASES.length)];
-      var base = this.SA * 2;
+      var scale = [0, 1, 3, 5, 7, 8, 10, 12];
+      var base = 293.66;
+      var notes = [];
+      var idx = 2 + Math.floor(Math.random() * 3);
+      var count = 3 + Math.floor(Math.random() * 3);
       var total = 0, k;
-      for (k = 0; k < notes.length; k++) { total += notes[k][1]; }
-      var rate = 120;
-      var n = Math.max(2, Math.floor(total * rate));
-      var curve = new Float32Array(n);
-      var pos = 0;
+      for (k = 0; k < count; k++) {
+        idx = Math.max(0, Math.min(scale.length - 1, idx + (Math.random() < 0.5 ? -1 : 1) * (1 + Math.floor(Math.random() * 2))));
+        var d = 1.4 + Math.random() * 1.0;
+        notes.push([scale[idx], d]);
+        total += d;
+      }
+      notes.push([0, 2.2]);
+      total += 2.2;
+      var rate = 100, n = Math.floor(total * rate), curve = new Float32Array(n), pos = 0;
       for (k = 0; k < notes.length; k++) {
-        var semi = notes[k][0], dur = notes[k][1];
-        var f0 = base * Math.pow(2, semi / 12);
-        var nextSemi = k + 1 < notes.length ? notes[k + 1][0] : semi;
-        var f1 = base * Math.pow(2, nextSemi / 12);
-        var steps = Math.floor(dur * rate);
-        var andolan = (semi % 12 === 1 || semi % 12 === 8 || semi % 12 === -4 || semi % 12 === -11);
+        var f0 = base * Math.pow(2, notes[k][0] / 12);
+        var f1 = k + 1 < notes.length ? base * Math.pow(2, notes[k + 1][0] / 12) : f0;
+        var steps = Math.floor(notes[k][1] * rate);
         for (var j = 0; j < steps && pos < n; j++) {
           var u = j / steps;
-          var tt = (pos / rate);
-          var f = f0;
-          // meend: glide into the next note during the last quarter
-          if (u > 0.75) { f = f0 * Math.pow(f1 / f0, (u - 0.75) / 0.25); }
-          var cents = andolan ? 22 * Math.sin(TWO_PI * 1.3 * tt) : 6 * Math.sin(TWO_PI * 5.2 * tt);
-          curve[pos++] = f * Math.pow(2, cents / 1200);
+          var f = u > 0.7 ? f0 * Math.pow(f1 / f0, (u - 0.7) / 0.3) : f0;
+          var vib = Math.min(1, j / 40) * 14 * Math.sin(TWO_PI * 4.8 * pos / rate);
+          curve[pos++] = f * Math.pow(2, vib / 1200);
         }
       }
       while (pos < n) { curve[pos] = curve[pos - 1]; pos++; }
-
-      var voice = c.createGain();
-      voice.gain.setValueAtTime(0.0001, t0);
-      voice.gain.exponentialRampToValueAtTime(0.2, t0 + 0.6);
-      voice.gain.setValueAtTime(0.2, t0 + total - 1.2);
-      voice.gain.exponentialRampToValueAtTime(0.0001, t0 + total);
-      var lp = c.createBiquadFilter();
-      lp.type = 'lowpass';
-      lp.frequency.value = 3200;
-      voice.connect(lp);
-      lp.connect(this.musicBus);
-      var body = [{ f: 620, q: 1.4, g: 1.0 }, { f: 1350, q: 2.2, g: 0.55 }, { f: 2700, q: 3.5, g: 0.3 }];
-      var mixIn = c.createGain();
-      mixIn.gain.value = 1;
-      for (k = 0; k < body.length; k++) {
-        var b = c.createBiquadFilter();
-        b.type = 'bandpass';
-        b.frequency.value = body[k].f;
-        b.Q.value = body[k].q;
-        var bg = c.createGain();
-        bg.gain.value = body[k].g;
-        mixIn.connect(b); b.connect(bg); bg.connect(voice);
-      }
-      var detunes = [1, 1.003];
-      for (k = 0; k < detunes.length; k++) {
+      var g = c.createGain();
+      g.gain.setValueAtTime(0.0001, t0);
+      g.gain.exponentialRampToValueAtTime(0.08, t0 + 1.0);
+      g.gain.setValueAtTime(0.08, t0 + total - 1.5);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + total);
+      var f1n = c.createBiquadFilter(); f1n.type = 'bandpass'; f1n.frequency.value = 420; f1n.Q.value = 3;
+      var f2n = c.createBiquadFilter(); f2n.type = 'bandpass'; f2n.frequency.value = 880; f2n.Q.value = 5;
+      var f2g = c.createGain(); f2g.gain.value = 0.4;
+      var types = ['triangle', 'sine'];
+      for (k = 0; k < types.length; k++) {
         var o = c.createOscillator();
-        o.type = 'sawtooth';
-        var cv = new Float32Array(n);
-        for (var q = 0; q < n; q++) { cv[q] = curve[q] * detunes[k]; }
-        o.frequency.setValueCurveAtTime(cv, t0, total);
-        var og = c.createGain();
-        og.gain.value = 0.5;
-        o.connect(og); og.connect(mixIn);
+        o.type = types[k];
+        o.frequency.setValueCurveAtTime(curve, t0, total);
+        o.connect(f1n); o.connect(f2n);
         o.start(t0); o.stop(t0 + total + 0.05);
       }
-      var bow = this.noise();
-      var bbp = c.createBiquadFilter(); bbp.type = 'bandpass'; bbp.frequency.value = 2400; bbp.Q.value = 0.9;
-      var bwg = c.createGain(); bwg.gain.value = 0.05;
-      bow.connect(bbp); bbp.connect(bwg); bwg.connect(voice);
-      bow.start(t0); bow.stop(t0 + total + 0.05);
+      f2n.connect(f2g);
+      f1n.connect(g); f2g.connect(g);
+      var br = this.noise();
+      var bbp = c.createBiquadFilter(); bbp.type = 'bandpass'; bbp.frequency.value = 1500; bbp.Q.value = 0.8;
+      var bg = c.createGain(); bg.gain.value = 0.03;
+      br.connect(bbp); bbp.connect(bg); bg.connect(g);
+      br.start(t0); br.stop(t0 + total + 0.05);
+      this.toMusic(g, Math.random() < 0.5 ? -0.75 : 0.75, 1.8);
       return total;
+    },
+
+    // a creak of old timber or a ship's hull: stick-slip friction
+    // exciting three wooden resonances
+    renderCreak: function () {
+      var c = this.ctx;
+      var sr = c.sampleRate;
+      var dur = 1.2 + Math.random() * 0.8;
+      var len = Math.floor(sr * dur);
+      var buf = c.createBuffer(1, len, sr);
+      var d = buf.getChannelData(0);
+      var x = new Float32Array(len);
+      var t = 0, i;
+      while (t < dur) {
+        var u = t / dur;
+        var rateHz = 14 + 40 * Math.sin(Math.PI * u) + (Math.random() - 0.5) * 8;
+        var idx = Math.floor(t * sr);
+        if (idx < len) { x[idx] = (0.5 + Math.random() * 0.5) * Math.sin(Math.PI * u); }
+        t += 1 / Math.max(6, rateHz);
+      }
+      var f1 = 170 + Math.random() * 130;
+      var res = [[f1, 0.035, 1], [f1 * 2.3, 0.025, 0.6], [f1 * 3.9, 0.018, 0.35]];
+      for (var r = 0; r < res.length; r++) {
+        var w = TWO_PI * res[r][0] / sr;
+        var rr = Math.exp(-1 / (res[r][1] * sr));
+        var a1 = 2 * rr * Math.cos(w), a2 = -rr * rr;
+        var y1 = 0, y2 = 0;
+        for (i = 0; i < len; i++) {
+          var y = x[i] + a1 * y1 + a2 * y2;
+          y2 = y1; y1 = y;
+          d[i] += y * res[r][2];
+        }
+      }
+      var peak = 0;
+      for (i = 0; i < len; i++) { peak = Math.max(peak, Math.abs(d[i])); }
+      for (i = 0; i < len; i++) { d[i] *= 0.7 / (peak || 1); }
+      return buf;
+    },
+
+    // a large bronze temple bell, struck once, far away
+    renderTempleBell: function () {
+      var c = this.ctx;
+      var sr = c.sampleRate;
+      var len = Math.floor(sr * 7);
+      var buf = c.createBuffer(2, len, sr);
+      var L = buf.getChannelData(0), Rr = buf.getChannelData(1);
+      var f0 = 196;
+      var parts = [[0.5, 0.45, 6], [1, 1, 4], [1.19, 0.5, 3], [1.56, 0.4, 2.4], [2.0, 0.3, 1.8], [2.74, 0.2, 1.2], [3.76, 0.12, 0.8]];
+      for (var p = 0; p < parts.length; p++) {
+        for (var side = 0; side < 2; side++) {
+          var f = f0 * parts[p][0] * (side ? 1.002 : 1);
+          var w = TWO_PI * f / sr;
+          var k = 2 * Math.cos(w);
+          var s1 = Math.sin(-w), s2 = Math.sin(-2 * w);
+          var ch = side ? Rr : L;
+          for (var i = 0; i < len; i++) {
+            var s0 = k * s1 - s2;
+            s2 = s1; s1 = s0;
+            ch[i] += s0 * parts[p][1] * Math.exp(-i / (parts[p][2] * sr)) * Math.min(1, i / 60);
+          }
+        }
+      }
+      var peak = 0, n;
+      for (n = 0; n < len; n++) { peak = Math.max(peak, Math.abs(L[n]), Math.abs(Rr[n])); }
+      for (n = 0; n < len; n++) { L[n] *= 0.8 / (peak || 1); Rr[n] *= 0.8 / (peak || 1); }
+      return buf;
     },
 
     // closeness 0..1: the music ducks and a low pulse rises as she nears,
@@ -1252,27 +1358,45 @@
     return decor;
   }
 
+  // ---- colour themes: the stone changes colour from level to level
+  var THEMES = {
+    sandstone: { floor: [52, 36, 30], floor2: [38, 26, 22], line: [175, 115, 85], wallDark: '#3c2119', wall: '#9b6555', wallLight: '#d29d88', rib: [55, 28, 20], orb: [255, 165, 70], vig: [130, 12, 16], sigil: [160, 22, 32], stone: '#120a08' },
+    jade:      { floor: [30, 44, 38], floor2: [20, 32, 27], line: [110, 170, 140], wallDark: '#14281f', wall: '#4f8a6c', wallLight: '#9fd0b2', rib: [15, 40, 28], orb: [170, 255, 150], vig: [10, 70, 40], sigil: [200, 35, 45], stone: '#08110d' },
+    lapis:     { floor: [28, 34, 58], floor2: [18, 22, 42], line: [110, 140, 210], wallDark: '#141a33', wall: '#4d64a3', wallLight: '#a3b6ee', rib: [15, 20, 45], orb: [120, 190, 255], vig: [20, 30, 110], sigil: [215, 45, 65], stone: '#080a16' },
+    ash:       { floor: [44, 42, 40], floor2: [30, 29, 28], line: [170, 165, 155], wallDark: '#232120', wall: '#8f8a82', wallLight: '#d8d3c8', rib: [30, 28, 26], orb: [240, 230, 210], vig: [70, 70, 70], sigil: [180, 25, 30], stone: '#0d0c0c' },
+    amethyst:  { floor: [44, 30, 54], floor2: [30, 20, 38], line: [170, 130, 210], wallDark: '#25163a', wall: '#7f5aa6', wallLight: '#c6a8ec', rib: [30, 15, 45], orb: [210, 140, 255], vig: [80, 20, 110], sigil: [230, 45, 85], stone: '#0e0814' },
+    ember:     { floor: [50, 24, 16], floor2: [34, 14, 10], line: [230, 120, 60], wallDark: '#3a1208', wall: '#b5532e', wallLight: '#f2a173', rib: [50, 15, 5], orb: [255, 120, 40], vig: [160, 40, 10], sigil: [240, 190, 60], stone: '#110604' },
+    abyss:     { floor: [18, 40, 44], floor2: [10, 26, 30], line: [90, 180, 180], wallDark: '#0c2427', wall: '#3f8f92', wallLight: '#9fe2e0', rib: [8, 30, 32], orb: [110, 240, 230], vig: [10, 70, 80], sigil: [235, 55, 75], stone: '#050f11' },
+    gilded:    { floor: [40, 34, 22], floor2: [26, 22, 14], line: [210, 175, 90], wallDark: '#2e2410', wall: '#a8873e', wallLight: '#f0d58e', rib: [40, 30, 10], orb: [255, 215, 120], vig: [110, 80, 10], sigil: [195, 30, 40], stone: '#0f0c06' },
+    blood:     { floor: [30, 10, 12], floor2: [18, 6, 8], line: [170, 50, 60], wallDark: '#2a0609', wall: '#7c1f27', wallLight: '#c8606a', rib: [30, 4, 6], orb: [255, 70, 70], vig: [170, 0, 10], sigil: [235, 220, 200], stone: '#0a0203' },
+    frost:     { floor: [34, 42, 50], floor2: [22, 28, 34], line: [160, 200, 225], wallDark: '#1b2630', wall: '#7f9db2', wallLight: '#d6ecf8', rib: [20, 30, 40], orb: [200, 235, 255], vig: [40, 80, 120], sigil: [215, 40, 60], stone: '#0a0e12' }
+  };
+
+  function theme() { return THEMES[(state.cfg && state.cfg.theme) || 'sandstone'] || THEMES.sandstone; }
+  function tc(rgb, a) { return 'rgba(' + rgb[0] + ',' + rgb[1] + ',' + rgb[2] + ',' + a + ')'; }
+
   // ---- floor: dark stone tiles, each with a faint carved diamond
   function paintFloor(c, cs, R) {
-    c.fillStyle = '#0b0605';
+    var th = theme();
+    c.fillStyle = th.stone;
     c.fillRect(-state.margin, -state.margin, state.pw, state.ph);
     for (var r = 0; r < state.rows; r++) {
       for (var col = 0; col < state.cols; col++) {
         var x = col * cs, y = r * cs;
         if (isBlocked(r, col)) {
           // solid stone outside the haveli's floor
-          c.fillStyle = (r + col) % 2 ? '#120a08' : '#100807';
+          c.fillStyle = th.stone;
           c.fillRect(x, y, cs, cs);
           continue;
         }
         var g = c.createLinearGradient(x, y, x + cs, y + cs);
-        var tone = R() * 10;
-        g.addColorStop(0, 'rgb(' + Math.round(52 + tone) + ',36,30)');
-        g.addColorStop(1, 'rgb(' + Math.round(38 + tone) + ',26,22)');
+        var tone = R() * 8;
+        g.addColorStop(0, 'rgb(' + Math.round(th.floor[0] + tone) + ',' + Math.round(th.floor[1] + tone) + ',' + Math.round(th.floor[2] + tone) + ')');
+        g.addColorStop(1, 'rgb(' + th.floor2[0] + ',' + th.floor2[1] + ',' + th.floor2[2] + ')');
         c.fillStyle = g;
         c.fillRect(x, y, cs, cs);
         // carved diamond
-        c.strokeStyle = 'rgba(175,115,85,0.16)';
+        c.strokeStyle = tc(th.line, 0.16);
         c.lineWidth = Math.max(0.6, cs * 0.02);
         c.beginPath();
         c.moveTo(x + cs / 2, y + cs * 0.12);
@@ -1281,7 +1405,7 @@
         c.lineTo(x + cs * 0.12, y + cs / 2);
         c.closePath();
         c.stroke();
-        c.strokeStyle = 'rgba(175,115,85,0.09)';
+        c.strokeStyle = tc(th.line, 0.09);
         c.beginPath();
         c.moveTo(x + cs / 2, y + cs * 0.3);
         c.lineTo(x + cs * 0.7, y + cs / 2);
@@ -1291,7 +1415,7 @@
         c.stroke();
         // grit
         for (var gr = 0; gr < 6; gr++) {
-          c.fillStyle = R() < 0.5 ? 'rgba(0,0,0,0.25)' : 'rgba(200,150,120,0.06)';
+          c.fillStyle = R() < 0.5 ? 'rgba(0,0,0,0.25)' : tc(th.line, 0.06);
           c.fillRect(x + R() * cs, y + R() * cs, Math.max(0.8, cs * 0.025), Math.max(0.8, cs * 0.025));
         }
         // grout
@@ -1314,26 +1438,27 @@
   }
 
   function paintWalls(c, segs, cs, t) {
+    var th = theme();
     c.lineCap = 'round';
     c.lineJoin = 'round';
     c.strokeStyle = 'rgba(0,0,0,0.6)';
     c.lineWidth = t * 1.7;
     wallPath(c, segs, cs, t * 0.3, t * 0.45);
     c.stroke();
-    c.strokeStyle = '#3c2119';
+    c.strokeStyle = th.wallDark;
     c.lineWidth = t * 1.2;
     wallPath(c, segs, cs, 0, 0);
     c.stroke();
-    c.strokeStyle = '#9b6555';
+    c.strokeStyle = th.wall;
     c.lineWidth = t;
     wallPath(c, segs, cs, 0, 0);
     c.stroke();
-    c.strokeStyle = '#d29d88';
+    c.strokeStyle = th.wallLight;
     c.lineWidth = t * 0.32;
     wallPath(c, segs, cs, -t * 0.16, -t * 0.18);
     c.stroke();
     // ribs across the stone
-    c.strokeStyle = 'rgba(55,28,20,0.5)';
+    c.strokeStyle = tc(th.rib, 0.5);
     c.lineWidth = Math.max(0.6, t * 0.13);
     c.lineCap = 'butt';
     var step = cs / 5;
@@ -1356,12 +1481,13 @@
   // ---- red circle-and-triangle sigil marking a riddle dead end
   function paintSigil(c, x, y, cs) {
     var r = cs * 0.3;
+    var sg = theme().sigil;
     var glow = c.createRadialGradient(x, y, 0, x, y, r * 1.6);
-    glow.addColorStop(0, 'rgba(170,20,30,0.25)');
-    glow.addColorStop(1, 'rgba(170,20,30,0)');
+    glow.addColorStop(0, tc(sg, 0.25));
+    glow.addColorStop(1, tc(sg, 0));
     c.fillStyle = glow;
     c.beginPath(); c.arc(x, y, r * 1.6, 0, TWO_PI); c.fill();
-    c.strokeStyle = 'rgba(160,22,32,0.85)';
+    c.strokeStyle = tc(sg, 0.85);
     c.lineWidth = Math.max(0.8, cs * 0.03);
     c.beginPath(); c.arc(x, y, r, 0, TWO_PI); c.stroke();
     c.lineWidth = Math.max(0.6, cs * 0.015);
@@ -1493,8 +1619,9 @@
     c.clearRect(0, 0, w, h);
     var g = c.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.3, w / 2, h / 2, Math.max(w, h) * 0.72);
     g.addColorStop(0, 'rgba(0,0,0,0)');
-    g.addColorStop(0.6, 'rgba(70,6,8,0.25)');
-    g.addColorStop(1, 'rgba(130,12,16,0.6)');
+    var vg2 = theme().vig;
+    g.addColorStop(0.6, tc([Math.round(vg2[0] * 0.55), Math.round(vg2[1] * 0.55), Math.round(vg2[2] * 0.55)], 0.25));
+    g.addColorStop(1, tc(vg2, 0.6));
     c.fillStyle = g;
     c.fillRect(0, 0, w, h);
   }
@@ -1517,14 +1644,15 @@
 
   function drawOrbs(c, cs, t) {
     var orbs = state.decor.orbs;
+    var oc = theme().orb;
     for (var k = 0; k < orbs.length; k++) {
       var o = orbs[k];
       var fl = 0.8 + 0.2 * Math.sin(t * 2.3 + o.phase) + 0.08 * Math.sin(t * 9 + o.phase);
       var x = o.x * cs, y = o.y * cs, r = o.r * cs;
       var g = c.createRadialGradient(x, y, 0, x, y, r);
-      g.addColorStop(0, 'rgba(255,165,70,' + (0.55 * fl) + ')');
-      g.addColorStop(0.35, 'rgba(230,120,40,' + (0.28 * fl) + ')');
-      g.addColorStop(1, 'rgba(200,90,30,0)');
+      g.addColorStop(0, tc(oc, 0.55 * fl));
+      g.addColorStop(0.35, tc([Math.round(oc[0] * 0.9), Math.round(oc[1] * 0.75), Math.round(oc[2] * 0.6)], 0.28 * fl));
+      g.addColorStop(1, tc(oc, 0));
       c.fillStyle = g;
       c.beginPath(); c.arc(x, y, r, 0, TWO_PI); c.fill();
     }
@@ -1568,22 +1696,23 @@
   }
 
   function drawPlayerSprite(c, cx, cy, cs, t) {
-    var spr = window.BBChars.player;
+    var pl = window.BBChars.players[state.character] || window.BBChars.players.male;
+    var spr = pl.canvas;
     var h = cs * FIGURE_H * 0.95, w = h * spr.width / spr.height;
     var top = cy - h * 0.6;
     var x0 = cx - w / 2;
-    var fx = x0 + window.BBChars.playerFlame[0] * w, fy = top + window.BBChars.playerFlame[1] * h;
-    var lg = c.createRadialGradient(fx, fy, 1, fx, fy, cs * 0.6);
-    lg.addColorStop(0, 'rgba(255,170,70,0.55)');
-    lg.addColorStop(1, 'rgba(255,170,70,0)');
-    c.fillStyle = lg;
-    c.beginPath(); c.arc(fx, fy, cs * 0.6, 0, TWO_PI); c.fill();
     c.drawImage(spr, x0, top, w, h);
-    var flick = 1 + Math.sin(t * 17) * 0.12 + Math.sin(t * 6.3) * 0.08;
-    c.fillStyle = 'rgba(255,190,90,0.9)';
-    c.beginPath(); c.ellipse(fx, fy, h * 0.011 * flick, h * 0.022 * flick, 0, 0, TWO_PI); c.fill();
-    c.fillStyle = 'rgba(255,248,215,0.95)';
-    c.beginPath(); c.ellipse(fx, fy + h * 0.004, h * 0.005, h * 0.011 * flick, 0, 0, TWO_PI); c.fill();
+    // the phone torch: a hard white point with a cool halo
+    var fx = x0 + pl.torch[0] * w, fy = top + pl.torch[1] * h;
+    var flick = 1 + Math.sin(t * 23) * 0.04;
+    var lg = c.createRadialGradient(fx, fy, 0, fx, fy, cs * 0.55 * flick);
+    lg.addColorStop(0, 'rgba(235,245,255,0.75)');
+    lg.addColorStop(0.25, 'rgba(200,220,255,0.3)');
+    lg.addColorStop(1, 'rgba(200,220,255,0)');
+    c.fillStyle = lg;
+    c.beginPath(); c.arc(fx, fy, cs * 0.55 * flick, 0, TWO_PI); c.fill();
+    c.fillStyle = '#ffffff';
+    c.beginPath(); c.arc(fx, fy, Math.max(1.2, h * 0.008), 0, TWO_PI); c.fill();
   }
 
   function render(t) {
@@ -1631,10 +1760,10 @@
     ctx.drawImage(fogLayer, 0, 0);
     ctx.setTransform(dpr, 0, 0, dpr, mo, mo);
 
-    // warm lantern light on everything near you
+    // the cool light of the phone torch on everything near you
     var warm = ctx.createRadialGradient(pcx, pcy, 0, pcx, pcy, rad);
-    warm.addColorStop(0, 'rgba(255,140,60,0.16)');
-    warm.addColorStop(1, 'rgba(255,140,60,0)');
+    warm.addColorStop(0, 'rgba(210,225,255,0.13)');
+    warm.addColorStop(1, 'rgba(210,225,255,0)');
     ctx.fillStyle = warm;
     ctx.beginPath(); ctx.arc(pcx, pcy, rad, 0, TWO_PI); ctx.fill();
 
@@ -1819,6 +1948,29 @@
     press(name);
     release(name);
   });
+
+  // ---- character picker on the title screen
+  try {
+    var saved = window.localStorage.getItem('bb-character');
+    if (saved === 'male' || saved === 'female') { state.character = saved; }
+  } catch (e) { /* storage may be blocked; the default is fine */ }
+  var cards = document.querySelectorAll('.char-card');
+  for (var ci = 0; ci < cards.length; ci++) {
+    (function (card) {
+      var name = card.getAttribute('data-char');
+      var cv = card.querySelector('canvas');
+      var cc = cv.getContext('2d');
+      cc.drawImage(window.BBChars.players[name].canvas, 0, 0, cv.width, cv.height);
+      card.classList.toggle('selected', name === state.character);
+      card.addEventListener('click', function () {
+        state.character = name;
+        for (var k = 0; k < cards.length; k++) {
+          cards[k].classList.toggle('selected', cards[k].getAttribute('data-char') === name);
+        }
+        try { window.localStorage.setItem('bb-character', name); } catch (e) { /* ignore */ }
+      });
+    })(cards[ci]);
+  }
 
   $('btn-start').addEventListener('click', startGame);
   $('btn-mute').addEventListener('click', function () {

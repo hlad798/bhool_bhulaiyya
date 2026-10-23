@@ -1,238 +1,185 @@
 """
-questions.py - The riddles that guard every dead end of the haveli.
+questions.py - The silly riddles that guard every dead end of the haveli.
 
 Two kinds of questions:
-  1. A fixed bank across subjects (science, history, geography, English,
-     computers, civics, maths, logic) with ids like 'p07'.
-  2. Freshly generated maths questions with ids like 'gen:lin:7:5:61'.
+  1. A fixed bank of riddles, ghost jokes and trick questions, ids like 'r07'.
+  2. Freshly generated silly maths, ids like 'gen:samosa:4:7'.
      The id itself carries the numbers, so the server can re-check the
      answer later without storing anything (Vercel functions are stateless).
 
 The correct answer is NEVER sent to the browser until the player answers.
+In the bank, the correct option is always written first; the server
+shuffles the options before sending them.
 
-Tier 1 = moderate (levels 1-3), tier 2 = hard (levels 3-5).
+Tier 1 = easy (levels 1-6), tier 2 = trickier (levels 5 onwards).
 """
 
-import math
 
-
-def Q(qid, tier, subject, text, options, answer_index):
-    return {'id': qid, 'tier': tier, 'subject': subject, 'text': text,
-            'options': options, 'answer': answer_index}
+def Q(qid, tier, kind, text, options):
+    return {'id': qid, 'tier': tier, 'kind': kind, 'text': text, 'options': options, 'answer': 0}
 
 
 BANK = [
     # ============================================================ TIER 1
-    # ---- Science
-    Q('s01', 1, 'Physics', 'What is the SI unit of force?',
-      ['Newton', 'Joule', 'Pascal', 'Watt'], 0),
-    Q('s02', 1, 'Biology', 'Which organelle is called the powerhouse of the cell?',
-      ['Mitochondria', 'Ribosome', 'Nucleus', 'Golgi body'], 0),
-    Q('s03', 1, 'Chemistry', 'What is the chemical formula of common salt?',
-      ['NaCl', 'KCl', 'Na2CO3', 'CaCl2'], 0),
-    Q('s04', 1, 'Biology', 'Which blood cells help the blood to clot?',
-      ['Platelets', 'Red blood cells', 'White blood cells', 'Plasma cells'], 0),
-    Q('s05', 1, 'Chemistry', 'What is the pH of pure water at 25 degrees Celsius?',
-      ['7', '0', '1', '14'], 0),
-    Q('s06', 1, 'Physics', 'Sound CANNOT travel through which of these?',
-      ['Vacuum', 'Water', 'Steel', 'Air'], 0),
-    Q('s07', 1, 'Biology', 'Which vitamin does your skin make in sunlight?',
-      ['Vitamin D', 'Vitamin A', 'Vitamin C', 'Vitamin K'], 0),
-    Q('s08', 1, 'Science', 'Which gas makes up most of Earth\'s atmosphere?',
-      ['Nitrogen', 'Oxygen', 'Carbon dioxide', 'Argon'], 0),
-    Q('s09', 1, 'Astronomy', 'Which planet takes the shortest time to orbit the Sun?',
-      ['Mercury', 'Venus', 'Mars', 'Earth'], 0),
-    # ---- History & civics
-    Q('h01', 1, 'History', 'Who was the first President of India?',
-      ['Dr. Rajendra Prasad', 'Jawaharlal Nehru', 'Dr. S. Radhakrishnan', 'Dr. Zakir Husain'], 0),
-    Q('h02', 1, 'History', 'The Constitution of India came into force on 26 January of which year?',
-      ['1950', '1947', '1949', '1952'], 0),
-    Q('h03', 1, 'History', 'Who led the Dandi Salt March in 1930?',
-      ['Mahatma Gandhi', 'Subhas Chandra Bose', 'Bhagat Singh', 'Sardar Patel'], 0),
-    Q('h04', 1, 'History', 'Which Mughal emperor built the Taj Mahal?',
-      ['Shah Jahan', 'Akbar', 'Aurangzeb', 'Humayun'], 0),
-    Q('c01', 1, 'Civics', 'In which city is the Reserve Bank of India headquartered?',
-      ['Mumbai', 'New Delhi', 'Kolkata', 'Chennai'], 0),
-    # ---- Geography
-    Q('g01', 1, 'Geography', 'Which is the largest state of India by area?',
-      ['Rajasthan', 'Madhya Pradesh', 'Maharashtra', 'Uttar Pradesh'], 0),
-    Q('g02', 1, 'Geography', 'What is the capital of Australia?',
-      ['Canberra', 'Sydney', 'Melbourne', 'Perth'], 0),
-    Q('g03', 1, 'Geography', 'Which river is called the "Dakshin Ganga"?',
-      ['Godavari', 'Krishna', 'Kaveri', 'Narmada'], 0),
-    # ---- English
-    Q('e01', 1, 'English', 'Which word means the same as "eerie"?',
-      ['Creepy', 'Joyful', 'Bright', 'Noisy'], 0),
-    Q('e02', 1, 'English', 'What is the plural of "phenomenon"?',
-      ['Phenomena', 'Phenomenons', 'Phenomenae', 'Phenomenon'], 0),
-    Q('e03', 1, 'English', 'Which spelling is correct?',
-      ['Necessary', 'Neccessary', 'Necesary', 'Neccesary'], 0),
-    # ---- Computers
-    Q('p01', 1, 'Python', 'In Python, what does len(\'haveli\') return?',
-      ['6', '5', '7', 'Error'], 0),
-    Q('p02', 1, 'Python', 'In Python, what is the value of 7 // 2?',
-      ['3', '3.5', '4', '1'], 0),
-    Q('p03', 1, 'Computers', 'Which HTML tag creates a hyperlink?',
-      ['<a>', '<link>', '<href>', '<url>'], 0),
-    Q('p04', 1, 'Computers', 'The binary number 1010 equals what in decimal?',
-      ['10', '8', '12', '5'], 0),
-    # ---- Maths & logic
-    Q('m01', 1, 'Maths', 'What is the next prime number after 31?',
-      ['37', '33', '35', '39'], 0),
-    Q('m02', 1, 'Maths', 'What is the sum of the interior angles of a hexagon?',
-      ['720 degrees', '540 degrees', '360 degrees', '900 degrees'], 0),
-    Q('l01', 1, 'Logic', 'A man has 3 daughters, and each daughter has exactly one brother. How many children does he have?',
-      ['4', '3', '6', '7'], 0),
-    Q('l02', 1, 'Logic', 'What comes next: 1, 1, 2, 3, 5, 8, 13, ...?',
-      ['21', '18', '20', '26'], 0),
+    Q('r01', 1, 'Ghost joke', 'What do ghosts spread on their toast?',
+      ['Scream cheese', 'Peanut butter', 'Honey', 'Mango jam']),
+    Q('r02', 1, 'Ghost joke', 'What is a ghost\'s favourite dessert?',
+      ['I-scream', 'Gulab jamun', 'Rasgulla', 'Kulfi']),
+    Q('r03', 1, 'Ghost joke', 'What do you call a ghost\'s mummy and papa?',
+      ['Transparents', 'Uncle and aunty', 'The elders', 'Grandparents']),
+    Q('r04', 1, 'Ghost joke', 'Which room do ghosts always avoid?',
+      ['The living room', 'The kitchen', 'The bathroom', 'The terrace']),
+    Q('r05', 1, 'Ghost joke', 'Why don\'t skeletons ever fight each other?',
+      ['They don\'t have the guts', 'They are best friends', 'They are scared of Manjulika', 'They are on leave']),
+    Q('r06', 1, 'Riddle', 'What has to be broken before you can use it?',
+      ['An egg', 'A promise', 'A phone', 'A haveli wall']),
+    Q('r07', 1, 'Riddle', 'What gets BIGGER the more you take away from it?',
+      ['A hole', 'Your exam marks', 'A samosa', 'Your patience']),
+    Q('r08', 1, 'Riddle', 'What has a neck but no head?',
+      ['A bottle', 'A pillow', 'A chair', 'A spoon']),
+    Q('r09', 1, 'Trick question', 'Which word is always spelled wrong in the dictionary?',
+      ['Wrong', 'Haveli', 'Rhythm', 'Ghost']),
+    Q('r10', 1, 'Trick question', 'How many months have 28 days?',
+      ['All 12', 'Only February', 'None', '2']),
+    Q('r11', 1, 'Trick question', 'In a race, you overtake the person in 2nd place. What place are you in now?',
+      ['2nd', '1st', '3rd', 'Disqualified']),
+    Q('r12', 1, 'Riddle', 'What goes up but never ever comes down?',
+      ['Your age', 'A kite', 'A ball', 'A lift']),
+    Q('r13', 1, 'Riddle', 'What can you hold in your right hand but never in your left hand?',
+      ['Your left elbow', 'A cup of chai', 'A phone', 'A pen']),
+    Q('r14', 1, 'Riddle', 'What has lots of teeth but can never bite?',
+      ['A comb', 'A crocodile', 'A dentist', 'A shark']),
+    Q('r15', 1, 'Riddle', 'Which room has no doors and no windows?',
+      ['A mushroom', 'A bathroom', 'A classroom', 'A storeroom']),
+    Q('r16', 1, 'Riddle', 'What travels all around the world but stays in one corner?',
+      ['A stamp', 'Wi-Fi', 'A cockroach', 'A tourist']),
+    Q('r17', 1, 'Riddle', 'What is full of holes but still holds water?',
+      ['A sponge', 'A bucket', 'A net', 'A glass']),
+    Q('r18', 1, 'Silly joke', 'What do you call a sleeping dinosaur?',
+      ['A dino-snore', 'A fossil', 'A lizard', 'Extinct']),
+    Q('r19', 1, 'Silly joke', 'What do you call cheese that isn\'t yours?',
+      ['Nacho cheese', 'Paneer', 'Stolen cheese', 'Mozzarella']),
+    Q('r20', 1, 'Silly joke', 'Why did the scarecrow win an award?',
+      ['He was outstanding in his field', 'He scared away Manjulika', 'He was the tallest', 'He bribed the judges']),
+    Q('r21', 1, 'Silly joke', 'What did the zero say to the eight?',
+      ['Nice belt!', 'You look tired', 'Move aside', 'Happy birthday']),
+    Q('r22', 1, 'Riddle', 'What has hands but cannot clap?',
+      ['A clock', 'A statue', 'A glove', 'A ghost']),
+    Q('r23', 1, 'Riddle', 'What runs but never walks, and has a mouth but never talks?',
+      ['A river', 'A ghost', 'A clock', 'A car']),
+    Q('r24', 1, 'Riddle', 'The more of them you take, the more you leave behind. What are they?',
+      ['Footsteps', 'Selfies', 'Breaths', 'Coins']),
+    Q('r25', 1, 'Silly joke', 'Why was the maths book so sad?',
+      ['It had too many problems', 'Nobody opened it', 'It lost its cover', 'It failed the exam']),
+    Q('r26', 1, 'Riddle', 'What kind of tree can you hold in your hand?',
+      ['A palm tree', 'A banyan tree', 'A family tree', 'A Christmas tree']),
+    Q('r27', 1, 'Riddle', 'What has keys but cannot open a single lock?',
+      ['A keyboard', 'A haveli', 'A locksmith', 'A diary']),
+    Q('r28', 1, 'Trick question', 'Which is heavier: a kilo of feathers or a kilo of bricks?',
+      ['They weigh the same', 'The bricks', 'The feathers', 'Depends on the bricks']),
 
     # ============================================================ TIER 2
-    # ---- Science
-    Q('s21', 2, 'Chemistry', 'What is the atomic number of carbon?',
-      ['6', '12', '8', '14'], 0),
-    Q('s22', 2, 'Chemistry', 'Which law says pressure x volume stays constant at a fixed temperature?',
-      ['Boyle\'s law', 'Charles\'s law', 'Ohm\'s law', 'Hooke\'s law'], 0),
-    Q('s23', 2, 'Biology', 'Which part of the brain mainly controls balance and posture?',
-      ['Cerebellum', 'Cerebrum', 'Medulla oblongata', 'Hypothalamus'], 0),
-    Q('s24', 2, 'Physics', 'Roughly how fast does light travel in a vacuum?',
-      ['3 x 10^8 m/s', '3 x 10^6 m/s', '3 x 10^5 m/s', '3 x 10^10 m/s'], 0),
-    Q('s25', 2, 'Chemistry', 'Which element has the symbol K?',
-      ['Potassium', 'Krypton', 'Phosphorus', 'Calcium'], 0),
-    Q('s26', 2, 'Biology', 'Which acid is found in the human stomach?',
-      ['Hydrochloric acid', 'Sulphuric acid', 'Nitric acid', 'Acetic acid'], 0),
-    Q('s27', 2, 'Science', 'Who discovered penicillin?',
-      ['Alexander Fleming', 'Louis Pasteur', 'Edward Jenner', 'Joseph Lister'], 0),
-    Q('s28', 2, 'Physics', 'In which year did C. V. Raman win the Nobel Prize in Physics?',
-      ['1930', '1913', '1928', '1947'], 0),
-    Q('s29', 2, 'Physics', 'Ohm\'s law links voltage and current with which quantity?',
-      ['Resistance', 'Power', 'Charge', 'Frequency'], 0),
-    # ---- History & civics
-    Q('h21', 2, 'History', 'In which year was the Battle of Plassey fought?',
-      ['1757', '1764', '1857', '1761'], 0),
-    Q('h22', 2, 'History', 'Who founded the Maurya Empire?',
-      ['Chandragupta Maurya', 'Ashoka', 'Bindusara', 'Bimbisara'], 0),
-    Q('h23', 2, 'History', 'In which city did the Jallianwala Bagh massacre take place?',
-      ['Amritsar', 'Lahore', 'Delhi', 'Lucknow'], 0),
-    Q('h24', 2, 'History', 'Who wrote "The Discovery of India"?',
-      ['Jawaharlal Nehru', 'Mahatma Gandhi', 'Rabindranath Tagore', 'B. R. Ambedkar'], 0),
-    Q('h25', 2, 'History', 'Who chaired the Drafting Committee of the Indian Constitution?',
-      ['B. R. Ambedkar', 'Rajendra Prasad', 'Jawaharlal Nehru', 'Sardar Patel'], 0),
-    Q('h26', 2, 'History', 'Babur defeated whom in the First Battle of Panipat (1526)?',
-      ['Ibrahim Lodi', 'Hemu', 'Rana Sanga', 'Sher Shah Suri'], 0),
-    Q('c21', 2, 'Civics', 'Who appoints the Governor of an Indian state?',
-      ['The President', 'The Prime Minister', 'The Chief Minister', 'The Chief Justice'], 0),
-    # ---- Geography
-    Q('g21', 2, 'Geography', 'The Tropic of Cancer does NOT pass through which state?',
-      ['Odisha', 'Gujarat', 'Jharkhand', 'Mizoram'], 0),
-    Q('g22', 2, 'Geography', 'Which Indian state has the longest coastline?',
-      ['Gujarat', 'Tamil Nadu', 'Andhra Pradesh', 'Maharashtra'], 0),
-    Q('g23', 2, 'Geography', 'Which is the highest mountain peak located in India?',
-      ['Kangchenjunga', 'Nanda Devi', 'Kamet', 'Anamudi'], 0),
-    Q('g24', 2, 'Geography', 'Which strait separates India and Sri Lanka?',
-      ['Palk Strait', 'Strait of Malacca', 'Bering Strait', 'Strait of Hormuz'], 0),
-    # ---- English
-    Q('e21', 2, 'English', 'What does "ephemeral" mean?',
-      ['Short-lived', 'Eternal', 'Ghostly', 'Enormous'], 0),
-    Q('e22', 2, 'English', 'Which of these words is a palindrome?',
-      ['Malayalam', 'Haveli', 'Manjulika', 'Ghungroo'], 0),
-    Q('e23', 2, 'English', 'Fill in the blank: "Neither of the doors ___ open."',
-      ['was', 'were', 'are', 'have been'], 0),
-    Q('e24', 2, 'English', 'Which word is the opposite of "benevolent"?',
-      ['Malevolent', 'Generous', 'Kind', 'Gentle'], 0),
-    # ---- Computers
-    Q('p21', 2, 'Python', 'In Python, what is [1, 2, 3][-1]?',
-      ['3', '1', '-1', 'Error'], 0),
-    Q('p22', 2, 'Python', 'In Python, what does print(2 ** 5) show?',
-      ['32', '10', '25', '7'], 0),
-    Q('p23', 2, 'Computers', 'Which data structure works on Last In, First Out?',
-      ['Stack', 'Queue', 'Array', 'Tree'], 0),
-    Q('p24', 2, 'Python', 'In Python, what does bool(\'\') return?',
-      ['False', 'True', 'None', 'Error'], 0),
-    Q('p25', 2, 'Computers', 'What is 0b1101 in decimal?',
-      ['13', '11', '9', '15'], 0),
-    Q('p26', 2, 'Computers', 'What does HTTP stand for?',
-      ['HyperText Transfer Protocol', 'High Transfer Text Process', 'HyperText Transmission Program', 'Host Transfer Text Protocol'], 0),
-    # ---- Maths & logic
-    Q('m21', 2, 'Maths', 'What is log base 10 of 1000?',
-      ['3', '10', '100', '30'], 0),
-    Q('m22', 2, 'Maths', 'How many diagonals does a hexagon have?',
-      ['9', '6', '12', '8'], 0),
-    Q('m23', 2, 'Maths', 'A triangle has sides 6, 8 and 10. What type of triangle is it?',
-      ['Right-angled', 'Equilateral', 'Isosceles', 'Obtuse-angled'], 0),
-    Q('m24', 2, 'Maths', 'What is the value of 0! (zero factorial)?',
-      ['1', '0', 'Undefined', 'Infinity'], 0),
-    Q('m25', 2, 'Maths', 'What is the angle between the clock hands at 3:15?',
-      ['7.5 degrees', '0 degrees', '15 degrees', '30 degrees'], 0),
-    Q('l21', 2, 'Logic', 'A bat and a ball cost Rs 110. The bat costs Rs 100 more than the ball. What does the ball cost?',
-      ['Rs 5', 'Rs 10', 'Rs 15', 'Rs 20'], 0),
+    Q('t01', 2, 'Trick question', 'A rooster lays an egg on a sloping roof. Which way does the egg roll?',
+      ['Roosters don\'t lay eggs', 'Left', 'Right', 'Straight down']),
+    Q('t02', 2, 'Trick question', 'Which word becomes SHORTER when you add two letters to it?',
+      ['Short', 'Long', 'Small', 'Tiny']),
+    Q('t03', 2, 'Trick question', 'Mary\'s father has five daughters: Nana, Nene, Nini, Nono... What is the fifth one called?',
+      ['Mary', 'Nunu', 'Nanu', 'Manjulika']),
+    Q('t04', 2, 'Riddle', 'What can you catch but never throw?',
+      ['A cold', 'A ball', 'A fish', 'A bus']),
+    Q('t05', 2, 'Trick question', 'How many times can you subtract 5 from 25?',
+      ['Once', '5 times', '4 times', 'Forever']),
+    Q('t06', 2, 'Riddle', 'What has one eye but cannot see?',
+      ['A needle', 'A pirate', 'A chapati', 'A spoon']),
+    Q('t07', 2, 'Riddle', 'If you have me, you want to share me. If you share me, I\'m gone. What am I?',
+      ['A secret', 'Money', 'Biryani', 'A shadow']),
+    Q('t08', 2, 'Riddle', 'I\'m black when you buy me, red when you use me, and grey when you throw me away. What am I?',
+      ['Charcoal', 'A tomato', 'A phone', 'Hair dye']),
+    Q('t09', 2, 'Riddle', 'What starts with T, ends with T, and has T in it?',
+      ['A teapot', 'A tent', 'A toilet', 'A ticket']),
+    Q('t10', 2, 'Riddle', 'What has four wheels and flies?',
+      ['A garbage truck', 'An aeroplane', 'A haunted car', 'A dragon']),
+    Q('t11', 2, 'Riddle', 'What breaks as soon as you say its name?',
+      ['Silence', 'A mirror', 'A promise', 'A heart']),
+    Q('t12', 2, 'Riddle', 'I\'m tall when I\'m young and short when I\'m old. What am I?',
+      ['A candle', 'A tree', 'A pencil sharpener', 'Your grandpa']),
+    Q('t13', 2, 'Silly joke', 'What do you call a fish with no eyes?',
+      ['A fsh', 'A blind fish', 'Nemo', 'A ghost fish']),
+    Q('t14', 2, 'Ghost joke', 'What do ghosts use to wash their hair?',
+      ['Sham-boo', 'Reetha', 'Soap', 'Coconut oil']),
+    Q('t15', 2, 'Silly joke', 'What did one wall say to the other wall?',
+      ['I\'ll meet you at the corner', 'You\'re cracked', 'Stop leaning on me', 'Good night']),
+    Q('t16', 2, 'Riddle', 'What has a head and a tail but no body?',
+      ['A coin', 'A snake', 'A comet', 'A ghost']),
+    Q('t17', 2, 'Riddle', 'What goes through cities and fields but never moves?',
+      ['A road', 'A train', 'The wind', 'A river']),
+    Q('t18', 2, 'Riddle', 'Forward I\'m heavy, but backward I\'m NOT. What am I?',
+      ['A ton', 'A brick', 'An elephant', 'A truck']),
+    Q('t19', 2, 'Silly joke', 'Why did the student eat his homework?',
+      ['The teacher said it was a piece of cake', 'He was very hungry', 'The dog refused', 'It was written on a samosa']),
+    Q('t20', 2, 'Riddle', 'What is always in front of you but can never be seen?',
+      ['The future', 'Your nose', 'A mirror', 'Manjulika']),
+    Q('t21', 2, 'Trick question', 'Where does Friday come before Thursday?',
+      ['In the dictionary', 'In Australia', 'Nowhere', 'In a leap year']),
+    Q('t22', 2, 'Riddle', 'What can you break without ever touching it?',
+      ['A promise', 'A glass', 'A wall', 'A bone']),
+    Q('t23', 2, 'Trick question', 'A plane crashes exactly on the border of two countries. Where do they bury the survivors?',
+      ['You don\'t bury survivors', 'In the first country', 'In the second country', 'On the border']),
+    Q('t25', 2, 'Ghost joke', 'Why did the ghost go into the lift?',
+      ['To lift its spirits', 'It was tired', 'To scare people', 'The stairs were haunted']),
+    Q('t26', 2, 'Silly joke', 'Why can\'t a bicycle stand up on its own?',
+      ['It\'s two-tired', 'It has no legs', 'It\'s lazy', 'Nobody parked it']),
+    Q('t27', 2, 'Riddle', 'What comes once in a minute, twice in a moment, but never in a thousand years?',
+      ['The letter M', 'A blink', 'A heartbeat', 'Manjulika']),
+    Q('t28', 2, 'Trick question', 'A man was out in the pouring rain with no umbrella and no hat, but not a single hair got wet. How?',
+      ['He was bald', 'He ran fast', 'It was ghost rain', 'He held his breath']),
 ]
 
 BANK_BY_ID = {q['id']: q for q in BANK}
 
 
-# ------------------------------------------------------------ generated maths
+# ------------------------------------------------------------ generated silly maths
 GEN_KINDS = {
-    1: ['lin', 'pct', 'sq'],
-    2: ['lin', 'pct', 'hcf', 'lcm', 'cube'],
+    1: ['samosa', 'chai'],
+    2: ['ghungroo', 'selfie'],
 }
 
 
 def _solve_generated(qid):
-    """Turn an id like 'gen:lin:7:5:61' back into (question text, correct answer)."""
+    """Turn an id like 'gen:samosa:4:7' back into (question text, correct answer)."""
     parts = qid.split(':')
     kind = parts[1]
-    nums = [int(x) for x in parts[2:]]
-    if kind == 'lin':
-        a, b, c = nums
-        if (c - b) % a != 0:
-            raise ValueError('bad generated question')
-        return 'Maths: If {}x + {} = {}, what is x?'.format(a, b, c), (c - b) // a
-    if kind == 'pct':
-        p, n = nums
-        return 'Maths: What is {}% of {}?'.format(p, n), p * n // 100
-    if kind == 'sq':
-        (n,) = nums
-        return 'Maths: What is {} squared?'.format(n), n * n
-    if kind == 'cube':
-        (n,) = nums
-        return 'Maths: What is {} cubed?'.format(n), n ** 3
-    if kind == 'hcf':
-        a, b = nums
-        return 'Maths: What is the HCF of {} and {}?'.format(a, b), math.gcd(a, b)
-    if kind == 'lcm':
-        a, b = nums
-        return 'Maths: What is the LCM of {} and {}?'.format(a, b), a * b // math.gcd(a, b)
+    a, b = int(parts[2]), int(parts[3])
+    if kind == 'samosa':
+        return ('Silly maths: Manjulika eats {} samosas every night. How many samosas does she eat in {} nights?'
+                .format(a, b), a * b)
+    if kind == 'chai':
+        return ('Silly maths: You had Rs {} and spent Rs {} on chai to calm your nerves. How much is left?'
+                .format(a, b), a - b)
+    if kind == 'ghungroo':
+        return ('Silly maths: Manjulika has {} bells on EACH ankle and {} spare bells in her pocket. How many bells in total?'
+                .format(a, b), 2 * a + b)
+    if kind == 'selfie':
+        return ('Silly maths: You take {} selfies in every room. The haveli has {} rooms. How many selfies before she catches you?'
+                .format(a, b), a * b)
     raise ValueError('unknown generated question')
 
 
 def _make_generated(tier, rng):
     kind = rng.choice(GEN_KINDS[tier])
-    if kind == 'lin':
-        a = rng.randint(3, 9 if tier == 1 else 13)
-        x = rng.randint(3, 12 if tier == 1 else 19)
-        b = rng.randint(2, 25)
-        qid = 'gen:lin:{}:{}:{}'.format(a, b, a * x + b)
-    elif kind == 'pct':
-        p = rng.choice([15, 25, 35, 45, 75] if tier == 1 else [12, 15, 35, 45, 65, 85])
-        n = 20 * rng.randint(3, 20) if tier == 1 else 25 * rng.randint(4, 24)
-        if p * n % 100 != 0:
-            n = 100 * rng.randint(2, 9)
-        qid = 'gen:pct:{}:{}'.format(p, n)
-    elif kind == 'sq':
-        qid = 'gen:sq:{}'.format(rng.randint(13, 29))
-    elif kind == 'cube':
-        qid = 'gen:cube:{}'.format(rng.randint(6, 13))
-    elif kind == 'hcf':
-        g = rng.randint(4, 15)
-        m, n = rng.sample([2, 3, 5, 7, 11], 2)
-        qid = 'gen:hcf:{}:{}'.format(g * m, g * n)
+    if kind == 'samosa':
+        a, b = rng.randint(2, 9), rng.randint(3, 9)
+    elif kind == 'chai':
+        a = rng.randint(4, 9) * 10
+        b = rng.randint(12, a - 5)
+    elif kind == 'ghungroo':
+        a, b = rng.randint(11, 25), rng.randint(3, 15)
     else:
-        a, b = rng.sample([4, 6, 8, 9, 10, 12, 14, 15, 16, 18], 2)
-        qid = 'gen:lcm:{}:{}'.format(a, b)
-
+        a, b = rng.randint(3, 9), rng.randint(6, 12)
+    qid = 'gen:{}:{}:{}'.format(kind, a, b)
     text, answer = _solve_generated(qid)
     options = {answer}
-    offsets = [-11, -10, -3, -2, -1, 1, 2, 3, 9, 10, 12, answer // 2 or 4]
+    offsets = [-10, -2, -1, 1, 2, 3, 10, a, -a]
     rng.shuffle(offsets)
     for off in offsets:
         if len(options) == 4:
@@ -247,12 +194,12 @@ def _make_generated(tier, rng):
 def _public_bank_question(q, rng):
     options = list(q['options'])
     rng.shuffle(options)
-    return {'id': q['id'], 'text': q['subject'] + ': ' + q['text'], 'options': options}
+    return {'id': q['id'], 'text': q['kind'] + ': ' + q['text'], 'options': options}
 
 
 # ------------------------------------------------------------------ public api
 def select_questions(count, tiers, rng):
-    """Pick `count` questions for one level. About a third are generated maths."""
+    """Pick `count` questions for one level. About one in five is silly maths."""
     pool = [q for q in BANK if q['tier'] in tiers]
     rng.shuffle(pool)
     chosen = []
@@ -260,7 +207,7 @@ def select_questions(count, tiers, rng):
         if not pool:
             pool = [q for q in BANK if q['tier'] in tiers]
             rng.shuffle(pool)
-        if rng.random() < 0.68:
+        if rng.random() < 0.8:
             chosen.append(_public_bank_question(pool.pop(), rng))
         else:
             chosen.append(_make_generated(rng.choice(tiers), rng))

@@ -116,13 +116,15 @@
       softSpot(c, side * 0.99 * u, 0.04 * u, 0.1 * u, 0.2 * u, skinD, 0.7);
     }
 
+    var jw = o.female ? 0.22 : (o.male ? 0.36 : 0.3);
+    var jc = o.female ? 0.6 : (o.male ? 0.86 : 0.7);
     function facePath() {
       c.beginPath();
       c.moveTo(0, -1.4 * u);
       c.bezierCurveTo(0.66 * u, -1.4 * u, 1.0 * u, -0.98 * u, 1.0 * u, -0.2 * u);
-      c.bezierCurveTo(1.0 * u, 0.5 * u, 0.7 * u, chinY - 0.35 * u, 0.3 * u, chinY - 0.06 * u);
-      c.quadraticCurveTo(0, chinY + 0.04 * u, -0.3 * u, chinY - 0.06 * u);
-      c.bezierCurveTo(-0.7 * u, chinY - 0.35 * u, -1.0 * u, 0.5 * u, -1.0 * u, -0.2 * u);
+      c.bezierCurveTo(1.0 * u, 0.5 * u, jc * u, chinY - 0.35 * u, jw * u, chinY - 0.06 * u);
+      c.quadraticCurveTo(0, chinY + 0.04 * u, -jw * u, chinY - 0.06 * u);
+      c.bezierCurveTo(-jc * u, chinY - 0.35 * u, -1.0 * u, 0.5 * u, -1.0 * u, -0.2 * u);
       c.bezierCurveTo(-1.0 * u, -0.98 * u, -0.66 * u, -1.4 * u, 0, -1.4 * u);
       c.closePath();
     }
@@ -267,11 +269,15 @@
     stroke(c, 'rgba(40,20,15,0.35)', 0.016 * u,
       [ix + side * 0.03 * u, y - 0.09 * u, x, y - up * 1.6 - 0.13 * u, ox, oy - 0.08 * u]);
     stroke(c, 'rgba(60,30,25,0.3)', 0.014 * u, [ix, y + 0.01 * u, x, y + dn * 1.7, ox, oy + 0.01 * u]);
+    var lashLen = o.female ? 0.08 : 0.05;
     for (var l = 0; l < 6; l++) {
       var t = 0.45 + l * 0.1;
       var lx = (1 - t) * (1 - t) * ix + 2 * (1 - t) * t * x + t * t * ox;
       var ly = (1 - t) * (1 - t) * y + 2 * (1 - t) * t * (y - up * 1.6) + t * t * oy;
-      stroke(c, 'rgba(10,4,4,0.8)', 0.012 * u, [lx, ly, lx + side * 0.04 * u, ly - 0.05 * u]);
+      stroke(c, 'rgba(10,4,4,0.8)', 0.012 * u, [lx, ly, lx + side * lashLen * 0.8 * u, ly - lashLen * u]);
+    }
+    if (o.female) {
+      stroke(c, '#0d0604', 0.03 * u, [ox, oy, ox + side * 0.1 * u, oy - 0.07 * u]);
     }
   }
 
@@ -284,7 +290,7 @@
       var t = k / 21;
       var bx = (1 - t) * (1 - t) * ix + 2 * (1 - t) * t * px + t * t * ox;
       var by = (1 - t) * (1 - t) * iy + 2 * (1 - t) * t * py + t * t * oy;
-      var thick = (1 - t * 0.7) * 0.05 * u;
+      var thick = (1 - t * 0.7) * 0.05 * u * (o.female ? 0.7 : (o.male ? 1.2 : 1));
       stroke(c, o.ghost ? 'rgba(20,12,14,0.75)' : 'rgba(25,14,8,0.8)', thick,
         [bx, by, bx + side * 0.05 * u, by - 0.012 * u]);
     }
@@ -307,8 +313,8 @@
   function drawMouth(c, u, chinY, o, skinD) {
     var R = o.rand;
     var my = 0.95 * u;
-    var upper = o.ghost ? '#6c5960' : '#874a40';
-    var lower = o.ghost ? '#7d696f' : '#9a594c';
+    var upper = o.ghost ? '#6c5960' : (o.female ? '#9c4f4f' : '#874a40');
+    var lower = o.ghost ? '#7d696f' : (o.female ? '#b4615c' : '#9a594c');
     c.lineCap = 'round';
     if (!o.scream) {
       c.fillStyle = upper;
@@ -784,147 +790,370 @@
     return { canvas: cv, eyes: [[eyes.left[0] / W, eyes.left[1] / H], [eyes.right[0] / W, eyes.right[1] / H]] };
   }
 
-  // ================================================================== PLAYER
-  var PLAYER_SKIN = [[205, 150, 108], [172, 116, 78], [108, 64, 40]];
+  // ================================================================== PLAYERS
+  // Two modern visitors to choose from, each lighting the way with a phone torch.
+  var PLAYER_SKIN = [[206, 152, 112], [176, 120, 82], [112, 68, 44]];
 
-  function paintPlayer() {
-    var W = 320, H = 640, cx = 150;
+  function drawSneaker(c, x, y, s, flip) {
+    var d = flip ? -1 : 1;
+    c.save();
+    c.translate(x, y);
+    c.scale(d, 1);
+    // chunky sole
+    c.fillStyle = '#b9b6b0';
+    c.beginPath();
+    c.moveTo(-s * 0.5, 0); c.lineTo(s * 0.95, 0);
+    c.quadraticCurveTo(s * 1.1, -s * 0.05, s * 1.0, -s * 0.22);
+    c.lineTo(-s * 0.5, -s * 0.22);
+    c.closePath();
+    c.fill();
+    // white upper
+    var g = c.createLinearGradient(0, -s * 0.8, 0, -s * 0.2);
+    g.addColorStop(0, '#ffffff');
+    g.addColorStop(1, '#d9d6d0');
+    c.fillStyle = g;
+    c.beginPath();
+    c.moveTo(-s * 0.45, -s * 0.2);
+    c.lineTo(-s * 0.42, -s * 0.78);
+    c.quadraticCurveTo(-s * 0.1, -s * 0.86, s * 0.15, -s * 0.7);
+    c.quadraticCurveTo(s * 0.7, -s * 0.5, s * 0.98, -s * 0.24);
+    c.closePath();
+    c.fill();
+    // laces and a coloured stripe
+    c.strokeStyle = 'rgba(120,120,120,0.8)';
+    c.lineWidth = s * 0.04;
+    for (var k = 0; k < 4; k++) {
+      c.beginPath();
+      c.moveTo(-s * 0.05 + k * s * 0.12, -s * 0.72 + k * s * 0.08);
+      c.lineTo(s * 0.12 + k * s * 0.12, -s * 0.66 + k * s * 0.08);
+      c.stroke();
+    }
+    c.strokeStyle = '#c0392b';
+    c.lineWidth = s * 0.07;
+    c.beginPath();
+    c.moveTo(-s * 0.3, -s * 0.35);
+    c.quadraticCurveTo(s * 0.2, -s * 0.48, s * 0.6, -s * 0.3);
+    c.stroke();
+    c.restore();
+  }
+
+  // Denim legs from the hips to the ankles; ripped knees if asked.
+  function drawJeans(c, cx, top, hipW, legGap, footY, dark, mid, light, ripped, R) {
+    var legs = [-1, 1];
+    for (var i = 0; i < 2; i++) {
+      var side = legs[i];
+      var hx = cx + side * (legGap + hipW * 0.5);
+      var kx = cx + side * (legGap + hipW * 0.55);
+      var ax = cx + side * (legGap + hipW * 0.55);
+      limb(c, hx, top + 12, kx, top + 140, hipW * 0.66, hipW * 0.48, dark, mid, light);
+      limb(c, kx, top + 140, ax, footY - 18, hipW * 0.48, hipW * 0.38, dark, mid, light);
+      // outer seam
+      stroke(c, rgba(light, 0.55), 1.3,
+        [hx + side * hipW * 0.6, top + 18, kx + side * hipW * 0.44, top + 140, ax + side * hipW * 0.35, footY - 20]);
+      // knee shine and ankle creases
+      softSpot(c, kx, top + 140, hipW * 0.28, hipW * 0.4, light, 0.35);
+      for (var q = 0; q < 3; q++) {
+        var yy = footY - 32 + q * 6;
+        stroke(c, rgba(dark, 0.7), 1.2, [ax - hipW * 0.36, yy, ax, yy + 3, ax + hipW * 0.36, yy]);
+      }
+      if (ripped) {
+        c.fillStyle = 'rgba(225,220,210,0.85)';
+        c.beginPath(); c.ellipse(kx, top + 138, hipW * 0.2, hipW * 0.11, 0, 0, TWO_PI); c.fill();
+        for (var th = 0; th < 4; th++) {
+          stroke(c, 'rgba(240,238,232,0.9)', 1, [kx - hipW * 0.2, top + 133 + th * 3, kx + hipW * 0.2, top + 133 + th * 3]);
+        }
+      }
+    }
+    // seat / crotch
+    var g = c.createLinearGradient(cx - hipW, 0, cx + hipW, 0);
+    g.addColorStop(0, rgba(dark, 1));
+    g.addColorStop(0.5, rgba(mid, 1));
+    g.addColorStop(1, rgba(dark, 1));
+    c.fillStyle = g;
+    c.beginPath();
+    c.moveTo(cx - legGap - hipW * 0.95, top);
+    c.lineTo(cx + legGap + hipW * 0.95, top);
+    c.lineTo(cx + legGap + hipW * 0.95, top + 50);
+    c.lineTo(cx, top + 62);
+    c.lineTo(cx - legGap - hipW * 0.95, top + 50);
+    c.closePath();
+    c.fill();
+    stroke(c, rgba(light, 0.6), 1.2, [cx, top + 4, cx + 2, top + 30, cx, top + 54]);
+    // waistband and belt loops
+    c.fillStyle = rgba(dark, 1);
+    c.fillRect(cx - legGap - hipW * 0.95, top - 2, (legGap + hipW * 0.95) * 2, 9);
+    c.fillStyle = rgba(light, 0.8);
+    for (var b = -2; b <= 2; b++) { c.fillRect(cx + b * hipW * 0.42 - 1.5, top - 2, 3, 10); }
+  }
+
+  // The hand that holds the phone, with the torch LED at the top.
+  function drawPhoneHand(c, x, y, s) {
+    c.save();
+    c.translate(x, y);
+    c.rotate(-0.25);
+    c.fillStyle = '#121418';
+    c.beginPath();
+    c.moveTo(-s * 0.32, -s * 0.9); c.lineTo(s * 0.32, -s * 0.9);
+    c.lineTo(s * 0.32, s * 0.3); c.lineTo(-s * 0.32, s * 0.3);
+    c.closePath();
+    c.fill();
+    c.strokeStyle = '#3a3e46';
+    c.lineWidth = s * 0.06;
+    c.stroke();
+    c.fillStyle = '#2b2f37';
+    c.beginPath(); c.arc(-s * 0.12, -s * 0.72, s * 0.08, 0, TWO_PI); c.fill();
+    c.fillStyle = '#fffbe8';
+    c.beginPath(); c.arc(s * 0.1, -s * 0.72, s * 0.06, 0, TWO_PI); c.fill();
+    // fingers wrapped around the phone
+    var g = c.createLinearGradient(-s * 0.4, 0, s * 0.4, 0);
+    g.addColorStop(0, rgba(PLAYER_SKIN[2], 1));
+    g.addColorStop(0.5, rgba(PLAYER_SKIN[1], 1));
+    g.addColorStop(1, rgba(PLAYER_SKIN[0], 1));
+    c.fillStyle = g;
+    c.beginPath(); c.ellipse(0, s * 0.1, s * 0.42, s * 0.3, 0, 0, TWO_PI); c.fill();
+    c.strokeStyle = rgba(PLAYER_SKIN[2], 0.8);
+    c.lineWidth = s * 0.03;
+    for (var f = 0; f < 3; f++) {
+      c.beginPath(); c.moveTo(-s * 0.3, -s * 0.02 + f * s * 0.1); c.lineTo(s * 0.3, -s * 0.02 + f * s * 0.1); c.stroke();
+    }
+    c.fillStyle = rgba(PLAYER_SKIN[1], 1);
+    c.beginPath(); c.ellipse(-s * 0.35, -s * 0.3, s * 0.1, s * 0.25, 0.3, 0, TWO_PI); c.fill();
+    c.restore();
+    var lx = x + Math.cos(-0.25 - Math.PI / 2) * s * 0.74 + Math.cos(-0.25) * s * 0.1;
+    var ly = y + Math.sin(-0.25 - Math.PI / 2) * s * 0.74 + Math.sin(-0.25) * s * 0.1;
+    return [lx, ly];
+  }
+
+  function drawModernMaleHair(c, cx, cy, u, R) {
+    // short faded sides
+    var sideG = c.createLinearGradient(0, cy - 1.0 * u, 0, cy - 0.2 * u);
+    sideG.addColorStop(0, 'rgba(25,16,10,0.95)');
+    sideG.addColorStop(1, 'rgba(60,40,28,0.35)');
+    c.fillStyle = sideG;
+    c.fillRect(cx - 1.02 * u, cy - 1.0 * u, 0.2 * u, 0.75 * u);
+    c.fillRect(cx + 0.82 * u, cy - 1.0 * u, 0.2 * u, 0.75 * u);
+    // volume on top, swept up and to the side
+    c.fillStyle = '#140d09';
+    c.beginPath();
+    c.moveTo(cx - 1.0 * u, cy - 0.85 * u);
+    c.quadraticCurveTo(cx - 1.08 * u, cy - 1.75 * u, cx - 0.2 * u, cy - 1.95 * u);
+    c.quadraticCurveTo(cx + 0.75 * u, cy - 2.05 * u, cx + 1.05 * u, cy - 1.35 * u);
+    c.quadraticCurveTo(cx + 1.06 * u, cy - 1.0 * u, cx + 0.98 * u, cy - 0.85 * u);
+    c.quadraticCurveTo(cx + 0.6 * u, cy - 1.22 * u, cx + 0.1 * u, cy - 1.2 * u);
+    c.quadraticCurveTo(cx - 0.55 * u, cy - 1.18 * u, cx - 1.0 * u, cy - 0.85 * u);
+    c.closePath();
+    c.fill();
+    c.lineCap = 'round';
+    for (var k = 0; k < 170; k++) {
+      var sx = cx + (R() * 1.8 - 0.95) * u;
+      var sy = cy - (1.25 + R() * 0.55) * u;
+      stroke(c, R() < 0.3 ? '#3b2a1f' : '#21160f', (0.015 + R() * 0.015) * u,
+        [sx, sy, sx + (0.12 + R() * 0.12) * u, sy - (0.12 + R() * 0.15) * u]);
+    }
+    softSpot(c, cx - 0.2 * u, cy - 1.75 * u, 0.45 * u, 0.12 * u, [140, 120, 105], 0.3);
+  }
+
+  function drawPonytail(c, cx, cy, u, R) {
+    // the ponytail, falling behind the right shoulder
+    c.fillStyle = '#16100d';
+    c.beginPath();
+    c.moveTo(cx + 0.55 * u, cy - 1.25 * u);
+    c.bezierCurveTo(cx + 1.6 * u, cy - 1.1 * u, cx + 1.5 * u, cy + 1.2 * u, cx + 1.25 * u, cy + 3.4 * u);
+    c.quadraticCurveTo(cx + 0.95 * u, cy + 2.2 * u, cx + 0.75 * u, cy - 0.6 * u);
+    c.closePath();
+    c.fill();
+    c.lineCap = 'round';
+    for (var k = 0; k < 90; k++) {
+      var t = R();
+      stroke(c, R() < 0.3 ? '#3e2a1f' : '#241812', (0.012 + R() * 0.015) * u,
+        [cx + 0.7 * u, cy - 1.15 * u, cx + (1.45 + R() * 0.2) * u, cy + 0.2 * u, cx + (0.95 + t * 0.35) * u, cy + (2.0 + t * 1.4) * u]);
+    }
+  }
+
+  function drawFemaleHairFront(c, cx, cy, u, R) {
+    var top = cy - 1.45 * u;
+    c.fillStyle = '#16100d';
+    c.beginPath();
+    c.moveTo(cx - 1.02 * u, cy - 0.2 * u);
+    c.quadraticCurveTo(cx - 1.12 * u, top - 0.05 * u, cx - 0.3 * u, top - 0.1 * u);
+    c.quadraticCurveTo(cx + 0.9 * u, top - 0.08 * u, cx + 1.03 * u, cy - 0.35 * u);
+    c.quadraticCurveTo(cx + 0.95 * u, cy - 1.0 * u, cx + 0.3 * u, cy - 1.12 * u);
+    c.quadraticCurveTo(cx - 0.25 * u, cy - 1.2 * u, cx - 0.3 * u, top + 0.15 * u);
+    c.quadraticCurveTo(cx - 0.75 * u, cy - 1.0 * u, cx - 0.88 * u, cy - 0.2 * u);
+    c.closePath();
+    c.fill();
+    c.lineCap = 'round';
+    for (var k = 0; k < 120; k++) {
+      var side = R() < 0.35 ? -1 : 1;
+      var ex = side < 0 ? cx - (0.85 + R() * 0.15) * u : cx + (0.8 + R() * 0.2) * u;
+      stroke(c, R() < 0.3 ? '#4a3224' : '#271a13', (0.01 + R() * 0.012) * u,
+        [cx - 0.3 * u, top - 0.02 * u, cx + side * 0.5 * u, top + 0.05 * u, ex, cy - (0.3 + R() * 0.7) * u]);
+    }
+    // face-framing strands
+    stroke(c, '#1d140f', 0.04 * u, [cx - 0.9 * u, cy - 0.7 * u, cx - 1.02 * u, cy + 0.3 * u, cx - 0.88 * u, cy + 1.0 * u]);
+    stroke(c, '#1d140f', 0.035 * u, [cx + 0.9 * u, cy - 0.7 * u, cx + 1.02 * u, cy + 0.2 * u, cx + 0.92 * u, cy + 0.8 * u]);
+    // hair tie
+    c.fillStyle = '#7a1f2b';
+    c.beginPath(); c.ellipse(cx + 0.72 * u, cy - 1.2 * u, 0.1 * u, 0.14 * u, 0.5, 0, TWO_PI); c.fill();
+    softSpot(c, cx + 0.2 * u, top + 0.1 * u, 0.5 * u, 0.12 * u, [170, 140, 120], 0.3);
+  }
+
+  function paintMale() {
+    var W = 320, H = 640, cx = 160;
     var cv = makeCanvas(W, H);
     var c = cv.getContext('2d');
     var R = seeded(4321);
-    var u = 28, fy = 92;
-    var k;
+    var u = 27, fy = 92;
+    var HD = [24, 26, 31], HM = [51, 55, 63], HL = [80, 86, 98];
 
-    // ---- churidar legs and mojari shoes
-    var legs = [[cx - 22, cx - 24], [cx + 22, cx + 25]];
-    for (k = 0; k < 2; k++) {
-      limb(c, legs[k][0], 440, legs[k][1], 590, 15, 10, [150, 145, 135], [225, 220, 210], [245, 242, 235]);
-      for (var g2 = 0; g2 < 9; g2++) {
-        var gy = 540 + g2 * 5.5;
-        stroke(c, 'rgba(90,85,75,0.35)', 1.2, [legs[k][1] - 11, gy, legs[k][1], gy + 4, legs[k][1] + 11, gy]);
-      }
-      var shoeX = legs[k][1];
-      var sh = c.createLinearGradient(0, 588, 0, 612);
-      sh.addColorStop(0, '#7a4a22');
-      sh.addColorStop(1, '#3a200c');
-      c.fillStyle = sh;
+    drawJeans(c, cx, 330, 30, 3, 600, [26, 44, 78], [48, 82, 134], [92, 124, 178], false, R);
+    drawSneaker(c, cx - 22, 604, 34, true);
+    drawSneaker(c, cx + 22, 604, 34, false);
+
+    // hoodie body
+    var hg = c.createLinearGradient(cx - 80, 0, cx + 80, 0);
+    hg.addColorStop(0, rgba(HD, 1));
+    hg.addColorStop(0.35, rgba(HM, 1));
+    hg.addColorStop(0.55, rgba(HL, 1));
+    hg.addColorStop(1, rgba(HD, 1));
+    c.fillStyle = hg;
+    c.beginPath();
+    c.moveTo(cx - 70, 172);
+    c.quadraticCurveTo(cx - 40, 152, cx, 152);
+    c.quadraticCurveTo(cx + 40, 152, cx + 70, 172);
+    c.lineTo(cx + 64, 338);
+    c.lineTo(cx - 64, 338);
+    c.closePath();
+    c.fill();
+    // ribbed hem
+    c.fillStyle = rgba(HD, 1);
+    c.fillRect(cx - 64, 322, 128, 18);
+    for (var k = 0; k < 32; k++) { stroke(c, rgba(HL, 0.25), 1, [cx - 62 + k * 4, 324, cx - 62 + k * 4, 338]); }
+    // kangaroo pocket
+    c.fillStyle = rgba(HD, 0.45);
+    c.beginPath();
+    c.moveTo(cx - 38, 252); c.lineTo(cx + 38, 252); c.lineTo(cx + 50, 318); c.lineTo(cx - 50, 318);
+    c.closePath(); c.fill();
+    stroke(c, rgba(HL, 0.5), 1.4, [cx - 38, 252, cx + 38, 252]);
+    stroke(c, rgba([10, 10, 12], 0.7), 2, [cx - 38, 254, cx - 50, 316]);
+    stroke(c, rgba([10, 10, 12], 0.7), 2, [cx + 38, 254, cx + 50, 316]);
+    // folds
+    var folds = [[cx - 48, 200, cx - 30, 240, cx - 44, 300], [cx + 44, 196, cx + 30, 236, cx + 44, 296], [cx - 10, 210, cx - 18, 240, cx - 8, 252]];
+    for (k = 0; k < folds.length; k++) { stroke(c, rgba([12, 12, 15], 0.45), 2.2, folds[k]); }
+
+    // left arm, relaxed
+    limb(c, cx - 66, 178, cx - 80, 256, 16, 14, HD, HM, HL);
+    limb(c, cx - 80, 256, cx - 84, 322, 14, 12, HD, HM, HL);
+    c.fillStyle = rgba(HD, 1);
+    c.fillRect(cx - 97, 314, 26, 14);
+    drawHand(c, cx - 84, 330, Math.PI / 2 + 0.05, 27, PLAYER_SKIN, '#d6aa90');
+    // right arm, raised, holding the phone torch
+    limb(c, cx + 66, 178, cx + 86, 248, 16, 14, HD, HM, HL);
+    limb(c, cx + 86, 248, cx + 106, 286, 14, 12, HD, HM, HL);
+    var torch = drawPhoneHand(c, cx + 112, 292, 32);
+
+    // hood bunched around the neck
+    c.strokeStyle = rgba(HM, 1);
+    c.lineWidth = 15;
+    c.beginPath(); c.ellipse(cx, 156, 38, 15, 0, Math.PI * 0.95, Math.PI * 2.05, true); c.stroke();
+    c.strokeStyle = rgba(HD, 0.8);
+    c.lineWidth = 3;
+    c.beginPath(); c.ellipse(cx, 160, 30, 10, 0, Math.PI * 0.95, Math.PI * 2.05, true); c.stroke();
+    drawNeck(c, cx, fy, u, PLAYER_SKIN, false);
+    // drawstrings
+    stroke(c, '#d8d8d8', 2.5, [cx - 12, 168, cx - 14, 196, cx - 16, 226]);
+    stroke(c, '#d8d8d8', 2.5, [cx + 12, 168, cx + 13, 196, cx + 15, 222]);
+    c.fillStyle = '#9a9a9a';
+    c.fillRect(cx - 18, 224, 4, 8);
+    c.fillRect(cx + 13, 220, 4, 8);
+
+    drawFace(c, cx, fy, u, { ghost: false, male: true, scream: false, rand: seeded(99) });
+    drawModernMaleHair(c, cx, fy, u, R);
+    return { canvas: cv, torch: [torch[0] / W, torch[1] / H] };
+  }
+
+  function paintFemale() {
+    var W = 320, H = 640, cx = 160;
+    var cv = makeCanvas(W, H);
+    var c = cv.getContext('2d');
+    var R = seeded(8765);
+    var u = 26, fy = 96;
+    var JD = [46, 52, 32], JM = [91, 100, 64], JL = [126, 138, 92];
+
+    drawPonytail(c, cx, fy, u, R);
+    drawJeans(c, cx, 316, 27, 1, 600, [18, 18, 22], [40, 42, 50], [78, 82, 94], true, R);
+    drawSneaker(c, cx - 18, 604, 30, true);
+    drawSneaker(c, cx + 18, 604, 30, false);
+
+    // white tee, tucked in
+    var tg = c.createLinearGradient(cx - 50, 0, cx + 50, 0);
+    tg.addColorStop(0, '#bdb9b2');
+    tg.addColorStop(0.5, '#f4f2ee');
+    tg.addColorStop(1, '#c9c5be');
+    c.fillStyle = tg;
+    c.beginPath();
+    c.moveTo(cx - 48, 168);
+    c.quadraticCurveTo(cx, 156, cx + 48, 168);
+    c.quadraticCurveTo(cx + 40, 250, cx + 44, 318);
+    c.lineTo(cx - 44, 318);
+    c.quadraticCurveTo(cx - 40, 250, cx - 48, 168);
+    c.closePath();
+    c.fill();
+    stroke(c, 'rgba(120,115,108,0.5)', 1.6, [cx - 20, 168, cx, 182, cx + 20, 168]);
+    stroke(c, 'rgba(150,145,138,0.5)', 1.4, [cx - 30, 260, cx, 270, cx + 30, 258]);
+
+    // open olive utility jacket
+    var panels = [-1, 1];
+    for (var i = 0; i < 2; i++) {
+      var side = panels[i];
+      var jg = c.createLinearGradient(cx + side * 70, 0, cx + side * 18, 0);
+      jg.addColorStop(0, rgba(JD, 1));
+      jg.addColorStop(0.6, rgba(JM, 1));
+      jg.addColorStop(1, rgba(JL, 1));
+      c.fillStyle = jg;
       c.beginPath();
-      c.moveTo(shoeX - 14, 612);
-      c.quadraticCurveTo(shoeX - 16, 588, shoeX, 588);
-      c.quadraticCurveTo(shoeX + 16, 590, shoeX + 20, 604);
-      c.quadraticCurveTo(shoeX + 26, 598, shoeX + 24, 592);
-      c.quadraticCurveTo(shoeX + 30, 612, shoeX + 14, 612);
+      c.moveTo(cx + side * 22, 160);
+      c.quadraticCurveTo(cx + side * 50, 154, cx + side * 66, 172);
+      c.lineTo(cx + side * 62, 336);
+      c.lineTo(cx + side * 28, 340);
+      c.quadraticCurveTo(cx + side * 22, 250, cx + side * 26, 200);
       c.closePath();
       c.fill();
-      c.fillStyle = '#d6aa4a';
-      for (var e = 0; e < 4; e++) { c.beginPath(); c.arc(shoeX - 6 + e * 5, 598, 1.4, 0, TWO_PI); c.fill(); }
+      // lapel
+      c.fillStyle = rgba(JD, 0.9);
+      c.beginPath();
+      c.moveTo(cx + side * 22, 160); c.lineTo(cx + side * 36, 162); c.lineTo(cx + side * 30, 214); c.lineTo(cx + side * 26, 200);
+      c.closePath(); c.fill();
+      // chest pocket with flap and button
+      c.fillStyle = rgba(JD, 0.55);
+      c.fillRect(cx + side * 34 - (side < 0 ? 22 : 0), 214, 22, 26);
+      c.fillStyle = rgba(JD, 1);
+      c.fillRect(cx + side * 34 - (side < 0 ? 22 : 0), 212, 22, 8);
+      c.fillStyle = '#c8b27a';
+      c.beginPath(); c.arc(cx + side * 45, 217, 1.8, 0, TWO_PI); c.fill();
+      // stitch line and fold
+      stroke(c, rgba(JL, 0.5), 1, [cx + side * 27, 205, cx + side * 26, 270, cx + side * 30, 336]);
+      stroke(c, rgba([20, 22, 12], 0.4), 2, [cx + side * 55, 250, cx + side * 48, 290, cx + side * 54, 330]);
     }
+    // left arm, relaxed
+    limb(c, cx - 62, 178, cx - 74, 256, 14, 12, JD, JM, JL);
+    limb(c, cx - 74, 256, cx - 78, 320, 12, 10, JD, JM, JL);
+    c.fillStyle = rgba(JD, 1);
+    c.fillRect(cx - 89, 314, 22, 10);
+    drawHand(c, cx - 78, 326, Math.PI / 2 + 0.05, 23, PLAYER_SKIN, '#b85a5a');
+    // right arm holding the phone torch
+    limb(c, cx + 62, 178, cx + 80, 246, 14, 12, JD, JM, JL);
+    limb(c, cx + 80, 246, cx + 98, 282, 12, 10, JD, JM, JL);
+    var torch = drawPhoneHand(c, cx + 104, 288, 28);
 
-    // ---- kurta, knee length with side slits
-    var kg = c.createLinearGradient(cx - 80, 0, cx + 80, 0);
-    kg.addColorStop(0, '#8f4a0e');
-    kg.addColorStop(0.3, '#e0892a');
-    kg.addColorStop(0.55, '#f0a346');
-    kg.addColorStop(0.85, '#c8701c');
-    kg.addColorStop(1, '#7c3f0b');
-    c.fillStyle = kg;
-    c.beginPath();
-    c.moveTo(cx - 62, 170);
-    c.lineTo(cx + 62, 170);
-    c.bezierCurveTo(cx + 66, 260, cx + 66, 360, cx + 74, 470);
-    c.quadraticCurveTo(cx + 40, 478, cx + 8, 474);
-    c.lineTo(cx + 2, 400);
-    c.lineTo(cx - 4, 474);
-    c.quadraticCurveTo(cx - 40, 478, cx - 74, 470);
-    c.bezierCurveTo(cx - 66, 360, cx - 66, 260, cx - 62, 170);
-    c.closePath();
-    c.fill();
-    // creases
-    var creases = [[cx - 50, 200, cx - 30, 260, cx - 40, 330], [cx + 46, 196, cx + 30, 250, cx + 38, 320],
-      [cx - 30, 330, cx - 40, 400, cx - 52, 465], [cx + 26, 340, cx + 40, 400, cx + 54, 465],
-      [cx - 10, 300, cx - 14, 360, cx - 20, 420], [cx + 12, 290, cx + 16, 350, cx + 22, 410]];
-    for (k = 0; k < creases.length; k++) {
-      stroke(c, 'rgba(110,50,8,0.38)', 2.4, creases[k]);
-      stroke(c, 'rgba(255,200,130,0.25)', 1.4,
-        [creases[k][0] + 3, creases[k][1], creases[k][2] + 3, creases[k][3], creases[k][4] + 3, creases[k][5]]);
-    }
-    // placket and buttons
-    c.fillStyle = 'rgba(150,75,10,0.45)';
-    c.fillRect(cx - 6, 170, 12, 92);
-    for (k = 0; k < 4; k++) {
-      var by2 = 184 + k * 20;
-      var bgr = c.createRadialGradient(cx - 1, by2 - 1, 0, cx, by2, 4);
-      bgr.addColorStop(0, '#fff3cf');
-      bgr.addColorStop(1, '#a88a4c');
-      c.fillStyle = bgr;
-      c.beginPath(); c.arc(cx, by2, 3.6, 0, TWO_PI); c.fill();
-    }
-
-    // ---- left arm hanging down (full sleeve)
-    limb(c, cx - 64, 182, cx - 82, 282, 15, 12, [120, 60, 10], [214, 128, 40], [238, 160, 70]);
-    limb(c, cx - 82, 282, cx - 88, 372, 12, 10, [120, 60, 10], [214, 128, 40], [238, 160, 70]);
-    drawHand(c, cx - 88, 372, Math.PI / 2 + 0.06, 20, PLAYER_SKIN, '#c99a80');
-
-    // ---- maroon shawl over the left shoulder, falling down the front
-    var shg = c.createLinearGradient(cx + 30, 0, cx + 100, 0);
-    shg.addColorStop(0, '#3e0d14');
-    shg.addColorStop(0.5, '#6e1c28');
-    shg.addColorStop(1, '#360a10');
-    c.fillStyle = shg;
-    c.beginPath();
-    c.moveTo(cx + 22, 166);
-    c.quadraticCurveTo(cx + 66, 160, cx + 82, 190);
-    c.lineTo(cx + 96, 440);
-    c.lineTo(cx + 54, 446);
-    c.quadraticCurveTo(cx + 40, 300, cx + 22, 166);
-    c.closePath();
-    c.fill();
-    for (k = 0; k < 140; k++) {
-      softSpot(c, cx + 40 + R() * 50, 180 + R() * 260, 2, 2, [150, 80, 90], 0.2);
-    }
-    stroke(c, '#b8913a', 2.5, [cx + 24, 170, cx + 42, 300, cx + 56, 444]);
-    stroke(c, '#b8913a', 2.5, [cx + 82, 192, cx + 90, 320, cx + 94, 440]);
-    for (k = 0; k < 18; k++) {
-      var fx2 = cx + 56 + k * 2.3;
-      stroke(c, '#5a1520', 1.4, [fx2, 444, fx2 + (R() - 0.5) * 3, 458 + R() * 4]);
-    }
-
-    // ---- right arm bent, holding the lantern
-    limb(c, cx + 64, 182, cx + 86, 270, 15, 12, [120, 60, 10], [214, 128, 40], [238, 160, 70]);
-    limb(c, cx + 86, 270, cx + 118, 318, 12, 10, [120, 60, 10], [214, 128, 40], [238, 160, 70]);
-    var lx = cx + 126, ly = 380;
-    // lantern (lalten): handle, cap, glass chimney with guard wires, fuel tank
-    stroke(c, '#3c3025', 2.2, [lx - 14, 348, lx, 322, lx + 14, 348]);
-    c.fillStyle = '#4a3c2c';
-    c.beginPath(); c.ellipse(lx, 350, 15, 5, 0, 0, TWO_PI); c.fill();
-    var gl = c.createLinearGradient(lx - 14, 0, lx + 14, 0);
-    gl.addColorStop(0, 'rgba(255,200,120,0.35)');
-    gl.addColorStop(0.5, 'rgba(255,235,190,0.75)');
-    gl.addColorStop(1, 'rgba(255,190,110,0.35)');
-    c.fillStyle = gl;
-    c.beginPath(); c.ellipse(lx, 378, 13, 25, 0, 0, TWO_PI); c.fill();
-    for (k = -1; k <= 1; k++) { stroke(c, 'rgba(60,48,36,0.9)', 1.4, [lx + k * 9, 356, lx + k * 13, 378, lx + k * 9, 400]); }
-    var tg2 = c.createLinearGradient(lx - 18, 0, lx + 18, 0);
-    tg2.addColorStop(0, '#2c2218');
-    tg2.addColorStop(0.5, '#6a5642');
-    tg2.addColorStop(1, '#2c2218');
-    c.fillStyle = tg2;
-    c.beginPath(); c.ellipse(lx, 410, 18, 10, 0, 0, TWO_PI); c.fill();
-    drawHand(c, cx + 118, 316, 1.25, 18, PLAYER_SKIN, '#c99a80');
-
-    // ---- head
     drawNeck(c, cx, fy, u, PLAYER_SKIN, false);
-    // mandarin collar
-    c.fillStyle = '#c96f1e';
-    c.beginPath();
-    c.moveTo(cx - 22, 152); c.quadraticCurveTo(cx, 164, cx + 22, 152);
-    c.lineTo(cx + 24, 168); c.quadraticCurveTo(cx, 178, cx - 24, 168);
-    c.closePath(); c.fill();
-    stroke(c, 'rgba(110,50,8,0.6)', 1.5, [cx - 24, 168, cx, 178, cx + 24, 168]);
-    drawFace(c, cx, fy, u, { ghost: false, scream: false, rand: seeded(99) });
-    drawShortHair(c, cx, fy, u, R);
-
-    return { canvas: cv, flame: [lx / W, 380 / H] };
+    drawFace(c, cx, fy, u, { ghost: false, female: true, scream: false, rand: seeded(98) });
+    // small gold studs
+    c.fillStyle = '#e2bd58';
+    c.beginPath(); c.arc(cx - 0.97 * u, fy + 0.25 * u, 2.2, 0, TWO_PI); c.fill();
+    c.beginPath(); c.arc(cx + 0.97 * u, fy + 0.25 * u, 2.2, 0, TWO_PI); c.fill();
+    drawFemaleHairFront(c, cx, fy, u, R);
+    return { canvas: cv, torch: [torch[0] / W, torch[1] / H] };
   }
 
   // ================================================================== PORTRAIT
@@ -987,15 +1216,15 @@
     ghostFrames.push(gf.canvas);
     ghostEyes = gf.eyes;
   }
-  var player = paintPlayer();
+  var male = paintMale();
+  var female = paintFemale();
 
   window.BBChars = {
     ghostFrame: function (t) {
       return ghostFrames[Math.floor(t * 5) % GHOST_FRAMES];
     },
     ghostEyes: ghostEyes,
-    player: player.canvas,
-    playerFlame: player.flame,
+    players: { male: male, female: female },
     drawGhostPortrait: drawGhostPortrait
   };
 })();

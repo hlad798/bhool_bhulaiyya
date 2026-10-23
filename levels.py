@@ -6,7 +6,8 @@ As you go deeper:
   * Manjulika moves faster (slowly at first, then steadily)
   * she wakes up sooner
   * your lantern gets dimmer
-  * the riddles get harder (you always get 10 seconds to answer)
+  * the riddles get trickier (you always get 10 seconds to answer)
+  * the stone changes colour
 """
 
 MAX_LEVEL = 20
@@ -34,6 +35,9 @@ LEVELS = [
     ('The Sealed Chambers',          'courtyard', 'prim',    0.04),
     ('The Chamber of Manjulika',     'full',      'dfs',     0.04),
 ]
+
+# A different colour for the stone every level (the browser knows how to paint each one)
+THEMES = ['sandstone', 'jade', 'lapis', 'ash', 'amethyst', 'ember', 'abyss', 'gilded', 'blood', 'frost']
 
 SHAPE_LABELS = {
     'full': 'a great hall',
@@ -78,9 +82,9 @@ def level_config(level):
     else:
         cols = rows
 
-    if level <= 4:
+    if level <= 6:
         tiers = [1]
-    elif level <= 8:
+    elif level <= 10:
         tiers = [1, 2]
     else:
         tiers = [2]
@@ -100,6 +104,7 @@ def level_config(level):
         'light_radius': round(3.6 - step * 0.065, 2),            # lantern radius in cells
         'braid': braid,
         'tiers': tiers,
+        'theme': THEMES[step % len(THEMES)],
     }
 
 
