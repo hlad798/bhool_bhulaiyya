@@ -122,7 +122,7 @@ def level_config(level):
         'lamps': level >= SECOND_GHOST_LEVEL,
         'lamp_every': 8.0,      # seconds between new lamps
         'lamp_life': 14.0,      # how long a lamp burns before it goes out
-        'lamp_freeze': 1.0,     # how long the ghosts are held back
+        'lamp_freeze': 2.5,     # how long the ghosts are held back
         'ghost2_speed': round((1.4 + step * 0.17) * 0.85, 2),
         'ghost2_wake_delay': round(max(1.0, 5.0 - step * 0.21) + 1.5, 2),
     }
