@@ -985,12 +985,26 @@
     loadLevel(1);
   }
 
+  // ask the server for a level's maze ahead of time (used while the jumpscare plays)
+  function prefetchLevel(n) {
+    var req = api('/api/level/' + n);
+    req.catch(function () { /* loadLevel will simply ask again */ });
+    state.prefetched = { level: n, req: req };
+  }
+
   function loadLevel(n) {
     state.running = false;
     state.level = n;
     state.levelStartTotal = state.total;
     $('loading').classList.add('show');
-    api('/api/level/' + n).then(function (data) {
+    var req;
+    if (state.prefetched && state.prefetched.level === n) {
+      req = state.prefetched.req.catch(function () { return api('/api/level/' + n); });
+    } else {
+      req = api('/api/level/' + n);
+    }
+    state.prefetched = null;
+    req.then(function (data) {
       $('loading').classList.remove('show');
       setupLevel(data);
     }).catch(function (err) {
@@ -1121,18 +1135,25 @@
     setTimeout(function () { Sound.scream(0.65, 1.3, { wet: 1.3, pitch: 0.74 }); }, 250);
     if (faces.length > 1) { setTimeout(function () { Sound.scream(0.5, 1.3, { wet: 1.3, pitch: 0.86 }); }, 370); }
     setTimeout(function () { Sound.boom(0.9); }, 480);
+    // while the jumpscare plays, quietly ask the server for your rank and for the
+    // retry maze, so the Retry button appears the moment the jumpscare ends
+    var rank = { title: null };
+    api('/api/rank', { total: state.total, cleared: state.level - 1 }).then(function (res) {
+      rank.title = res.title;
+      var el = $('caught-rank');
+      if (el) { el.innerHTML = 'Rank: <b>' + res.title + '</b>'; }
+    }).catch(function () { /* the rank line just stays empty */ });
+    prefetchLevel(state.level);
     setTimeout(function () {
       stopScare();
       redAlarm(false);
-      api('/api/rank', { total: state.total, cleared: state.level - 1 }).then(function (res) {
-        showCaught(reason, res.title);
-      }).catch(function () { showCaught(reason, ''); });
+      showCaught(reason, rank.title);
     }, 2600);
   }
 
   function showCaught(reason, title) {
     showMessage((state.catcher === 'both' ? 'Manjulika and Anjulika' : (state.catcher === 'anjulika' ? 'Anjulika' : 'Manjulika')) + ' caught you!', reason +
-      '<br><br>Score so far: <b>' + state.total + '</b>' + (title ? '<br>Rank: <b>' + title + '</b>' : ''),
+      '<br><br>Score so far: <b>' + state.total + '</b><br><span id="caught-rank">' + (title ? 'Rank: <b>' + title + '</b>' : '') + '</span>',
       [{ label: 'Retry level ' + state.level, primary: true, onClick: function () {
           state.total = state.levelStartTotal;
           loadLevel(state.level);
