@@ -1052,7 +1052,7 @@
       data.config.ghost_speed + ' steps per second</b>.<br>You have only <b>' +
       data.config.question_time + ' seconds</b> to answer each riddle. Find the glowing white light.' +
       (data.spawn2 ? '<br><br><span style="color:#5dff9a">Her sister <b>Anjulika</b> also hunts these halls - she is coming from the other side.</span>' : '') +
-      (data.config.lamps ? '<br><span style="color:#ffd27a">Golden <b>lamps</b> will appear on your path. Grab one and both sisters freeze for ' + data.config.lamp_freeze + ' second.</span>' : ''),
+      (data.config.lamps ? '<br><span style="color:#ffd27a">Golden <b>lamps</b> will appear on your path. Grab one and both sisters freeze for ' + data.config.lamp_freeze + ' seconds.</span>' : ''),
       [{ label: 'Begin', primary: true, onClick: function () {
         Sound.resume();
         state.running = true;
