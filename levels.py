@@ -42,7 +42,7 @@ LEVELS = [
 ]
 
 # A different colour for the stone every level (the browser knows how to paint each one)
-THEMES = ['sandstone', 'jade', 'lapis', 'ash', 'amethyst', 'ember', 'abyss', 'gilded', 'blood', 'frost']
+THEMES = ['sandstone', 'jade', 'lapis', 'rose', 'amethyst', 'ember', 'abyss', 'gilded', 'blood', 'frost']
 
 SHAPE_LABELS = {
     'full': 'a great hall',
