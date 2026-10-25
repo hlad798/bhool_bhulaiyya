@@ -183,7 +183,10 @@ h2 {
   touch-action: none;
 }
 .dpad-btn:active, .dpad-btn.pressed { background: #7a1420; }
-@media (hover: none), (max-width: 760px) { #dpad { display: flex; } }
+@media (hover: none), (max-width: 760px) { #dpad { display: flex; gap: 10px; }
+  #dpad .dpad-row { gap: 10px; }
+  /* big thumb-sized buttons on phones, shrinking on short screens so they always fit */
+  #dpad .dpad-btn { width: min(28vw, 130px); height: min(19vw, 11vh, 96px); font-size: 2rem; border-radius: 12px; border-width: 2px; } }
 
 /* ---------------------------------------------------------- modals */
 .modal {
