@@ -24,6 +24,7 @@ html, body {
   overflow: hidden;
   -webkit-tap-highlight-color: transparent;
   user-select: none;
+  touch-action: manipulation;   /* no double-tap zoom on phones */
 }
 
 body {
