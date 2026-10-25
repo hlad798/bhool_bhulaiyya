@@ -132,6 +132,10 @@
   <script>
     // installable app: register the service worker and show an Install button when the browser allows it
     (function () {
+      // no zooming on phones: block pinch (iPhone ignores user-scalable=no) and double-tap
+      document.addEventListener('gesturestart', function (e) { e.preventDefault(); });
+      document.addEventListener('dblclick', function (e) { e.preventDefault(); });
+      document.addEventListener('touchmove', function (e) { if (e.touches && e.touches.length > 1) { e.preventDefault(); } }, { passive: false });
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', function () {
           navigator.serviceWorker.register('/sw.js').catch(function () { /* not fatal */ });
